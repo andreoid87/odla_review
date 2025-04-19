@@ -1,0 +1,44 @@
+/* MAIN WINDOW */
+
+QScrollArea .QWidget
+{
+    background-color: palette(window);
+}
+
+QFrame#boardFrame > QAbstractButton
+{
+    background-color: rgba(0,0,0,0);
+}
+
+QFrame#boardFrame > QAbstractButton:hover,
+QFrame#blockNumFrame > QAbstractButton:hover
+{
+    border: 1px solid lightblue;
+    border-radius: 16px;
+    background-color: rgba(66, 134, 244, 128);
+}
+
+QFrame#boardFrame > QAbstractButton:checked
+{
+    border: 1px solid lightblue;
+    border-radius: 16px;
+    background-color: rgba(66, 134, 244, 128);
+}
+
+QFrame#staffFrame > QAbstractButton:hover,
+QFrame#staffFrame > QAbstractButton:pressed
+{
+    border: 1px solid lightblue;
+    border-radius: 12px;
+    background-color: rgba(66, 134, 244, 128);
+}
+
+QFrame#staffFrame > QAbstractButton[height="14"]:hover,
+QFrame#staffFrame > QAbstractButton[height="14"]:pressed
+{
+    border: 1px solid lightblue;
+    border-radius: 6px;
+    background-color: rgba(66, 134, 244, 128);
+}
+
+

@@ -1,0 +1,6 @@
+[submodule "singleapplication"]
+	path = singleapplication
+	url = https://github.com/itay-grudev/SingleApplication.git
+[submodule "Musescore_Plugin"]
+	path = Musescore_Plugin
+	url = https://github.com/kemoniariverOrganization/Musescore_Plugin.git

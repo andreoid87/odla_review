@@ -1,0 +1,26 @@
+*.user
+odlaInstaller/packages/ics.component/data/*
+odlaInstaller/packages/it.kemoniariver.musescoreinstaller/data/*
+odlaInstaller/packages/it.kemoniariver.odlainstaller/data/*
+odlaInstaller/packages/it.kemoniariver.installer.musescore/data/*
+odlaInstaller/packages/it.kemoniariver.installer.odla/data/
+*.qm
+win32fakeinstall/
+win32install/
+build.qtc/
+Installer/oldOdla.iss
+mac64install
+installer-mac/packages/it.kemoniariver.musescore/data/MuseScore.app
+installer-mac/packages/it.kemoniariver.odla/data/Odla.app
+installer-mac/packages/it.kemoniariver.musescore/data/MuseScore ODLA.app
+*.exe
+*.dmg
+*.app
+buildDebug.qtc/
+installer-mac/packages/it.kemoniariver.musescore/data
+build/
+odla.pro.user.*
+installer-mac/ODLA_Installer-*
+/installer-mac/Odla.app
+/builds
+/installer-win/bin

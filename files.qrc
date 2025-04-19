@@ -1,0 +1,20 @@
+<RCC>
+    <qresource prefix="/">
+        <file>stylesheet.txt</file>
+        <file>fonts/BravuraText.otf</file>
+        <file>fonts/Bravura.otf</file>
+        <file>fonts/fa-regular-400.ttf</file>
+        <file>fonts/InriaSans-Bold.ttf</file>
+        <file>fonts/InriaSans-BoldItalic.ttf</file>
+        <file>fonts/InriaSans-Italic.ttf</file>
+        <file>fonts/InriaSans-Light.ttf</file>
+        <file>fonts/InriaSans-LightItalic.ttf</file>
+        <file>fonts/InriaSans-Regular.ttf</file>
+        <file>odla.db</file>
+        <file>odla.icns</file>
+        <file>odla.ico</file>
+        <file>Musescore_Plugin/ODLA.png</file>
+        <file>Musescore_Plugin/ODLA.qml</file>
+        <file>odla.png</file>
+    </qresource>
+</RCC>
