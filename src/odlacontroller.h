@@ -45,7 +45,8 @@ enum class MessageTypes : int
 };
 
 /*!
- * \brief The ODLAController2 class
+ * \class ODLAControllerV2
+ * \brief Manages all keyboard-driven input sequences and routes them to the notation engine.
  */
 class ODLAControllerV2 : public QObject
 {
@@ -60,7 +61,6 @@ public:
     void setTempo();
     void setLastKeyPressed(uint8_t pressed);
     void setLastKeyReleased(uint8_t released);
-    //MenuDialog _diag;
     void silentHide();
 
 signals:
@@ -70,88 +70,52 @@ signals:
     void inputSequenceProgress(ModifiersV2 key, int opt = -1); // -1 means don't care
     void inputMoveSelection(direction_t dir);
     void enterEvent(ModifiersV2 modifier, bool fn);
-    void inputSequenceAborted(ModifiersV2 key);
-    void inputDigitReady(int digit);
-    void inputError(MessageTypes type, QString message);
-    void quitRequested();
-
-public slots:
-    // Init MuseScore when connected to Keyboard
-    void onKeyboardConnectionChanged(bool connected);
-
-    void onOptionPageChanged(int page);
-    void onRatioInputChanged(int numerator, int denominator);
-    void onTextInputChanged(QString text);
 
     // modifier keys
-    void onMenuKeyPressed(bool fn);
-    void onClefKeyPressed(bool fn);
-    void onTimeSignatureKeyPressed(bool fn);
-    void onKeySignatureKeyPressed(bool fn);
-    void onBarKeyPressed(bool fn);
-    void onOptionsKeyPressed(bool fn);
+    // TODO: refactor on*KeyPressed/on*KeyReleased into a macro or generic handler
+    #define DECLARE_KEY_SLOT(name) \
+      /// \brief Handler for the name key press event. \
+      void on##name##KeyPressed(bool fn); \
+      void on##name##KeyReleased(bool fn);
 
-    // copy / paste
+    // Key-slot declarations
+    DECLARE_KEY_SLOT(Menu)
+    DECLARE_KEY_SLOT(Clef)
+    DECLARE_KEY_SLOT(TimeSignature)
+    DECLARE_KEY_SLOT(KeySignature)
+    DECLARE_KEY_SLOT(Bar)
+    DECLARE_KEY_SLOT(Options)
+    DECLARE_KEY_SLOT(Select)
+    DECLARE_KEY_SLOT(Copy)
+    DECLARE_KEY_SLOT(Paste)
+    DECLARE_KEY_SLOT(Staff)
+    DECLARE_KEY_SLOT(Plus)
+    DECLARE_KEY_SLOT(Minus)
+    DECLARE_KEY_SLOT(Flat)
+    DECLARE_KEY_SLOT(Natural)
+    DECLARE_KEY_SLOT(Sharp)
+    DECLARE_KEY_SLOT(Goto)
+    DECLARE_KEY_SLOT(Play)
+    DECLARE_KEY_SLOT(Pause)
+    DECLARE_KEY_SLOT(Metronome)
+    DECLARE_KEY_SLOT(Voice)
+    DECLARE_KEY_SLOT(Interval)
+    DECLARE_KEY_SLOT(Chord)
+    DECLARE_KEY_SLOT(Tuplet)
+    DECLARE_KEY_SLOT(Slur)
+    DECLARE_KEY_SLOT(Number)
+    DECLARE_KEY_SLOT(Dot)
+    DECLARE_KEY_SLOT(Question)
+    DECLARE_KEY_SLOT(Help)
+    DECLARE_KEY_SLOT(Undo)
+    DECLARE_KEY_SLOT(Redo)
+    DECLARE_KEY_SLOT(Enter)
+    DECLARE_KEY_SLOT(Cancel)
+    DECLARE_KEY_SLOT(ArrowUp)
+    DECLARE_KEY_SLOT(ArrowDown)
+    DECLARE_KEY_SLOT(ArrowLeft)
+    DECLARE_KEY_SLOT(ArrowRight)
 
-    // select
-    void onSelectKeyPressed();
-    void onSelectKeyReleased();
-    void onCopyKeyPressed(bool fn);
-    void onPasteKeyPressed(bool fn);
-
-    // staff
-    void onStaffKeyPressed(int line, bool fn);
-
-    // plus / minus
-    void onPlusKeyPressed(bool fn);
-    void onMinusKeyPressed(bool fn);
-
-    // accidentals
-    void onFlatKeyPressed(bool fn);
-    void onNaturalKeyPressed(bool fn);
-    void onSharpKeyPressed(bool fn);
-
-    // goto / playback
-    void onGotoKeyPressed(bool fn);
-    void onPlayKeyPressed(bool fn);
-    void onPauseKeyPressed(bool fn);
-    void onMetronomeKeyPressed(bool fn);
-
-    // voice / intervals / chord / tuplet / slur
-    void onVoiceKeyPressed(bool fn);
-    void onIntervalKeyPressed(bool fn);
-    void onChordKeyPressed(bool fn);
-    void onChordKeyReleased(bool fn);
-    void onTupletKeyPressed(bool fn);
-    void onSlurKeyPressed(bool fn);
-    void onSlurKeyReleased(bool fn);
-
-    // numpad / dot
-    void onNumberKeyPressed(int digit, bool fn);
-    void onDotKeyPressed(bool fn);
-
-    // status / Info
-    void onQuestionKeyPressed(bool fn);
-    void onHelpKeyPressed(bool fn);
-
-    // undo / redo
-    void onUndoKeyPressed(bool fn);
-    void onRedoKeyPressed(bool fn);
-
-    // enter / cancel
-    void onEnterKeyPressed(bool fn);
-    void onCancelKeyPressed(bool fn);
-
-    // arrows
-    void onArrowUpKeyPressed(bool fn);
-    void onArrowDownKeyPressed(bool fn);
-    void onArrowLeftKeyPressed(bool fn);
-    void onArrowRightKeyPressed(bool fn);
-
-    //transpose
-    void onTransposeToolSelected();
-
-protected slots:
     void resetInternalStateVariables();
 
 protected:
@@ -214,7 +178,6 @@ protected:
     void evaluateMenuOption(int opt);
     void evaluateFileSubMenuOption(int opt);
     void evaluateEditSubMenuOption(int opt);
-    //void evaluateToolsSubMenuOption(int opt);
     void evaluateClefOption(int opt);
     void evaluateTimeSigOption(int opt);
     void evaluateKeySigOption(int opt);

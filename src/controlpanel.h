@@ -1,21 +1,24 @@
+
 #ifndef CONTROLPANEL_H
 #define CONTROLPANEL_H
 
-#include <QMainWindow>
-#include <QParallelAnimationGroup>
-#include <QMap>
-#include <QSystemTrayIcon>
-#include "odlacontroller.h"
-#include "localizationmanager.h"
-<<<<<<< HEAD:src/controlpanel.h
-=======
-
->>>>>>> 8e720e43ca3709044504952c47f15cddf387d0ba:odla/controlpanel.h
+    #include <QMainWindow>
+    #include <QParallelAnimationGroup>
+    #include <QMap>
+    #include <QSystemTrayIcon>
+    #include "odlacontroller.h"
 
 namespace Ui {
 class ControlPanel;
 }
 
+/**
+ * @class ControlPanel
+ * @brief Main control panel window for ODLA, handling input, UI states, and interactions.
+ *
+ * Manages numeric/text input pads, plus/minus and accidental options, and forwards user actions
+ * to the ODLAControllerV2. Provides signals for page changes and input completion.
+ */
 class ControlPanel : public QMainWindow
 {
     Q_OBJECT
@@ -32,16 +35,47 @@ class ControlPanel : public QMainWindow
     };
 
 public:
+    /**
+     * @brief Constructs the control panel window.
+     * @param parent Optional parent widget.
+     */
     explicit ControlPanel(QWidget *parent = nullptr);
+    /**
+     * @brief Destroys the control panel window.
+     */
     ~ControlPanel();
 
-    virtual void changeEvent(QEvent *event) override;
-    virtual void closeEvent(QCloseEvent *event) override;
+    /**
+     * @brief Handles widget change events.
+     * @param event Event to handle.
+     */
+    void changeEvent(QEvent *event) override;
+    /**
+     * @brief Handles widget close events.
+     * @param event Close event.
+     */
+    void closeEvent(QCloseEvent *event) override;
 
+    /**
+     * @brief Initializes the control panel.
+     */
     void init();
+
+    /**
+     * @brief Sets the ODLA controller.
+     * @param odlaController Controller for ODLA operations.
+     */
     void setODLAController(ODLAControllerV2* odlaController);
+
+    /**
+     * @brief Retrieves the About QAction.
+     * @return Pointer to the About action.
+     */
     QAction* getAboutAction() const;
 
+    /**
+     * @brief Updates the current page.
+     */
     void setCurrentPage();
 
 public slots:
@@ -79,7 +113,6 @@ private:
     Ui::ControlPanel *ui;
     ODLAControllerV2 *_odlaController;
     QParallelAnimationGroup _toggleAnimation;
-    //MainWindow *_simulatorWindow;
     bool _askForConfirmOnClosing;
 
     QMap<ODLAStates, QString> _statesMap;
@@ -87,18 +120,26 @@ private:
 
     QPoint centerOfScreen;
 
-    QColor _disabledKeyColor;
-    QColor _enabledKeyColor;
-    QColor _selectedKeyColor;
-    QColor _highlightColor;
-    QColor _keyPadBackColor;
-    QFont _keyNumberFont;
-    QFont _keyLabelFont;
-    QFont _keySideLabelFont;
-    QFont _bigFont;
-    float _keySize;
-    float _keySpacing;
-    float _arrowWidth;
+    /**
+     * @struct KeyStyle
+     * @brief Holds style parameters for keypad rendering.
+     */
+    struct KeyStyle {
+        QColor disabledColor;
+        QColor enabledColor;
+        QColor selectedColor;
+        QColor highlightColor;
+        QColor backColor;
+        QFont numberFont;
+        QFont labelFont;
+        QFont sideLabelFont;
+        QFont bigFont;
+        float keySize;
+        float keySpacing;
+        float arrowWidth;
+    };
+
+    KeyStyle _keyStyle;
 
     bool _autoExpand;
     bool _neverCollapse;
@@ -118,7 +159,6 @@ private:
 
     QSystemTrayIcon *tray;
 
-    // the current state of menu
     ODLAStates _currentState;
     QStringList _lastIconNameList;
 
@@ -135,6 +175,7 @@ private:
 
     QImage makeNumPadIcon(int absoluteOptionNumber, QPixmap symbol, QSize size, bool disableKeyWithoutSymbol = true);
     QImage makeNumPadIcon(int absoluteOptionNumber, QString label, QSize size, bool disableKeyWithoutLabel = true);
+
 signals:
     void dialogShown();
 };
