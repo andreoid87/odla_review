@@ -3,11 +3,7 @@
 #include "database.h"
 #include <QInputDialog>
 #include <QMessageBox>
-<<<<<<< HEAD:src/odlacontroller.cpp
 #include "voiceover.h"
-=======
-#include <vocalsynt.h>
->>>>>>> 8e720e43ca3709044504952c47f15cddf387d0ba:odla/odlacontroller.cpp
 
 ODLAControllerV2::ODLAControllerV2(QObject *parent) : QObject(parent)
 {
