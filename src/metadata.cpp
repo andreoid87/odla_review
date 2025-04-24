@@ -4,7 +4,7 @@
 extern bool isDebug;
 int Metadata::recursionLevel = 0;
 QString Metadata::message = "";
-bool Metadata::closePanel = false;
+bool Metadata::recursiveClosePanel = false;
 QRegularExpression Metadata::filter = QRegularExpression("\\$\\((.+?)\\)");
 QMap<QString, QObject*> Metadata::objectsMap;
 
@@ -37,9 +37,6 @@ QString Metadata::resolveString(QString baseString)
         QString output = invokeWithReturn(commandID);
         finalString.replace("$(" + match.captured(1) + ")", output);
     }
-    // Recursively scan until we get all message
-    //    if(finalString.contains(re))
-    //        finalString = resolveString(finalString);
     return finalString;
 }
 
@@ -58,43 +55,44 @@ QString Metadata::resolveString(QString baseString)
  *  > "arg" is an optional QString argument
  *  > "close_panel" containts directve that can hide panel after command
  */
-bool Metadata::invokeVoid(QString commandID, bool softwareConnected)
-{
-    if(commandID.isEmpty())
+bool Metadata::invokeVoid(QSqlRecord record)  {
+    if(record.isEmpty())
         return false;
     bool retVal = false;
 
-    if(isDebug)
-        qDebug() << "searching command:"  << commandID;
-
-    // Checking wrong command format
-    QJsonObject command = Database::instance()->getCommand(commandID);
-
-    if(isDebug)
-        qDebug() << "Found command:"  << command;
-
-    if(command.value("method_name").isUndefined())
+    if(!record.value("method_name").isValid())
         return false;
-    QString className = command.take("class_name").toString();
-    QString methodName = command.take("method_name").toString();
-    QString messageID = command.take("message_done").toString();
-    if(isDebug)
-        qDebug() << "message_done:"  << messageID;
-    bool allowedCommand = command.take("available_offline").toBool() | softwareConnected;
-    closePanel |= command.take("close_panel").toBool();
+    QString className = record.value("class_name").toString();
+    QString methodName = record.value("method_name").toString();
+    QString messageID = record.value("message_done").toString();
+    QString argumentsString = resolveString(record.value("arguments").toString());
+    bool offlineMethod = record.value("offline").toBool();
+    bool closePanel = record.value("close_panel").toBool();
+
+    // if(isDebug)
+    //     qDebug() << "Command:"  << className << ":" << methodName + "(" + argumentsString + ")";
+
+    bool allowedCommand = offlineMethod | Panel::instance()->isAppConnected();
+    recursiveClosePanel |= closePanel;
 
     // check recursion level in order to avoid to notify only the latest command message
     recursionLevel++;
+    // debug all condition in next if
+
     if(!className.isEmpty() && !methodName.isEmpty() && allowedCommand)
     {
         QObject * obj = objectsMap.value(className);
         if(obj)
         {
-            if(command.isEmpty()) //TODO: UNIFY ALL COMMANDS FIELDS
+            QJsonObject arguments = Database::instance()->extractJson(argumentsString);
+            if(arguments.isEmpty()) //TODO: UNIFY ALL COMMAND FIELDS
+            {
                 retVal = QMetaObject::invokeMethod(obj, methodName.toUtf8());
+            }
             else
-                retVal = QMetaObject::invokeMethod(obj, methodName.toUtf8(), Q_ARG(QJsonObject, command));
-
+            {
+                retVal = QMetaObject::invokeMethod(obj, methodName.toUtf8(), Q_ARG(QJsonObject, arguments));
+            }
             //Resolve message after command is executed and only at first recursion level in order to have updated status
             // message will be resolved after command is executed to update status
             QString baseMessage = Database::instance()->getTextTranslated(messageID);
@@ -102,18 +100,20 @@ bool Metadata::invokeVoid(QString commandID, bool softwareConnected)
             message += (message.isEmpty() ? "" : "; ") + thisLevelMessage;
         }
     }
+
     if(recursionLevel == 1)
     {
-        if(closePanel && Panel::instance()->isVisible())
+        if(recursiveClosePanel && Panel::instance()->isVisible())
         {
             Panel::instance()->hideMenu();
             if(!message.isEmpty())
-                message += "; " + Database::instance()->speechText("CLOSED_WINDOW");
+                message += "; " + Database::instance()->speechText("closed_window");
         }
         VoiceOver::instance()->say(message);
         message = "";
-        closePanel = false;
+        recursiveClosePanel = false;
     }
+
     recursionLevel --;
     return retVal;
 }
@@ -138,20 +138,27 @@ QString Metadata::invokeWithReturn(QString commandID)
 {
     if(commandID.isEmpty())
         return "";
+    QString retVal = "";
+
+    if(isDebug)
+        qDebug() << "searching command:"  << commandID;
 
     // Checking wrong command format
-    QJsonObject command = Database::instance()->getCommand(commandID);
-    
-       if(isDebug)
-           qDebug() << "Found command with return:"  << command;
+    QSqlRecord record = Database::instance()->getCommand(commandID);
 
-    QString className = command.take("class_name").toString();
-    QString methodName = command.take("method_name").toString();
-    QString messageID = command.take("message_done").toString();
-    bool closePanel = command.take("close_panel").toBool();
-    command.remove("available_offline");
+    if(!record.value("method_name").isValid())
+        return "";
+    QString className = record.value("class_name").toString();
+    QString methodName = record.value("method_name").toString();
+    QString messageID = record.value("message_done").toString();
+    QString stringArguments = resolveString(record.value("arguments").toString());
 
-    if(closePanel)
+    if(isDebug)
+        qDebug() << "Command:"  << className << ":" << methodName + "(" + stringArguments + ")";
+    bool allowedCommand = record.value("offline").toBool();
+    recursiveClosePanel |= record.value("close_panel").toBool();
+
+    if(recursiveClosePanel)
         Panel::instance()->hideMenu();
 
     if(className.isEmpty() || methodName.isEmpty())
@@ -161,14 +168,18 @@ QString Metadata::invokeWithReturn(QString commandID)
     if(obj == nullptr)
         return "";
 
-    QString retVal;
     if(!messageID.isEmpty())
-        qDebug() << "here is a message id, please delete it from DB" << messageID;
+        qDebug() << "Not valid command:, please delete it from DB" << messageID;
 
-    if(command.isEmpty())
+    QJsonObject arguments = Database::instance()->extractJson(stringArguments);
+    if(arguments.isEmpty()) //TODO: UNIFY ALL COMMAND FIELDS
+    {
         QMetaObject::invokeMethod(obj, methodName.toUtf8(), Q_RETURN_ARG(QString, retVal));
+    }
     else
-        QMetaObject::invokeMethod(obj, methodName.toUtf8(), Q_RETURN_ARG(QString, retVal), Q_ARG(QJsonObject, command));
+    {
+        QMetaObject::invokeMethod(obj, methodName.toUtf8(),Q_RETURN_ARG(QString, retVal), Q_ARG(QJsonObject, arguments));
+    }
 
     return retVal;
 }
@@ -188,8 +199,6 @@ void Metadata::addCallableInstance(QObject * instance, bool mapToBaseClassName)
             objectsMap[instance->metaObject()->superClass()->className()] = instance;
         else
             objectsMap[instance->metaObject()->className()] = instance;
-        //        if(!QString("Database").compare(instance->metaObject()->className()))
-        //            qDebug() << objectsMap;
     }
 }
 /*!

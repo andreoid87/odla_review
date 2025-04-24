@@ -14,7 +14,7 @@ class MenuVCenter : public Menu
     Q_OBJECT
 public:
     MenuVCenter(QWidget *parent, QSqlRecord record);
-    QString type() override {return "V_CENTER";}
+    QString type() override {return "v_center";}
     void loadButtons() override;
 
 public slots:

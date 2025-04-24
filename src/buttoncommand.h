@@ -17,7 +17,6 @@ class ButtonCommand : public Button
 
 public:
     ButtonCommand(QWidget *parent, QSqlRecord record);
-    QString table() const               override {return "BUTTON_COMMAND";}
     void setVisible(bool val) override;
 
 public slots:

@@ -1,4 +1,5 @@
 #include "menuinsertion.h"
+#include "src/buttoninsertion.h"
 
 MenuInsertion::MenuInsertion(QWidget *parent, QSqlRecord record) : Menu(parent, record)
 {
@@ -14,25 +15,30 @@ MenuInsertion::MenuInsertion(QWidget *parent, QSqlRecord record) : Menu(parent, 
  */
 void MenuInsertion::navigator(QJsonObject command)
 {
-    if(!Button::currentButton() || Button::currentButton()->table() != "BUTTON_INSERTION")
+    // We have to chech if we currently have an instantiated button
+    if(!Button::currentButton())
         return;
+
+    auto insertionButton = dynamic_cast<ButtonInsertion*>(Button::currentButton());
+
+    // And also if it's a ButtonInsertion Class instance
+    if (insertionButton == nullptr)
+        return;
+
     bool isNumber = command["value"].isDouble();
     QString keyName = command["value"].toString();
-    
-    auto textBox = static_cast<ButtonInsertion*>(Button::currentButton());
 
     if(isNumber)
-        textBox->appendDigit(QString::number(command["value"].toInt()));
+        insertionButton->appendDigit(QString::number(command["value"].toInt()));
 
-    else if(keyName == "UNDO")
-        textBox->clearTitle();
+    else if(keyName == "undo")
+        insertionButton->clearTitle();
 
-    else if(keyName == "UP")
+    else if(keyName == "up")
         selectUpperItem();
 
-    else if(keyName == "DOWN")
+    else if(keyName == "down")
         selectLowerItem();
-
     else
         Button::currentButton()->command(keyName);
 }
@@ -43,7 +49,7 @@ QString MenuInsertion::buttonValue(QJsonObject buttonNumberWrapper)
 
     if(_buttonList.size() > buttonNumber)
     {
-        QString defaultValue = buttonNumberWrapper["defaultValue"].toString();
+        QString defaultValue = buttonNumberWrapper["default_value"].toString();
         QString value = _buttonList.at(buttonNumber)->value();
         return value.isEmpty() ? defaultValue : value;
     }
@@ -57,14 +63,13 @@ QString MenuInsertion::buttonValue(QJsonObject buttonNumberWrapper)
  */
 void MenuInsertion::loadButtons()
 {
-    QString filters = QString("parentMenu='%1'").arg(menuID());
-    filters += QString(" AND type='INSERTION'");
-    auto buttonListRecord = _db->allTableRecords("button", filters);
-    for(auto &record : buttonListRecord)
+    auto buttonList = _db->getMenuButtons(menuID());
+    for(auto &record :buttonList)
     {
-        if(record.value(_db->currentSoftware() + "_position").isNull())
+        QString type = record.value("type").toString();
+        if(type != "insertion")
             continue;
-        auto item = new ButtonInsertion(this, record);        
+        auto item = new ButtonInsertion(this, record);
         item->hideNumber();
         _buttonList.append(item);
     }

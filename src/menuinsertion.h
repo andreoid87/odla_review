@@ -14,7 +14,7 @@ class MenuInsertion : public Menu
     Q_OBJECT
 public:
     MenuInsertion(QWidget *parent, QSqlRecord record);
-    QString type() override {return "INSERTION";}
+    QString type() override {return "insertion";}
     void loadButtons() override;
 
 public slots:

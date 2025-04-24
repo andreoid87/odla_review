@@ -1,153 +1,180 @@
 #!/bin/bash
 
-# Imposta la directory di lavoro alla cartella dello script
-cd "$(dirname "$0")" || exit 1  # Cambia alla directory dello script
+# Set the working directory to the script's folder
+cd "$(dirname "$0")" || exit 1
 
-# Funzione per aggiornare il percorso relativo a percorso assoluto
-get_absolute_path() {
-  echo "$(realpath "$1")"
+# Define the path to the Qt folder
+QT_FOLDER=$(find ~ -type d -name "Qt" -maxdepth 2 2>/dev/null | head -n 1)
+
+# Check if folder was found
+if [[ -z "$QT_FOLDER" ]]; then
+    echo "Errore: Directory Qt non trovata. Assicurati che Qt sia installato."
+    exit 1
+fi
+
+echo "Directory Qt trovata in: $QT_FOLDER"
+
+# Find all Qt version directories matching the pattern X.Y.Z
+QT_VERSIONS=()
+while IFS= read -r -d '' dir; do
+    if [[ "$(basename "$dir")" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        QT_VERSIONS+=("$dir")
+    fi
+done < <(find "$QT_FOLDER" -maxdepth 1 -type d -print0)
+
+# Check if there are any Qt versions found
+if [ ${#QT_VERSIONS[@]} -eq 0 ]; then
+    echo "No Qt versions found in $QT_FOLDER."
+    exit 1
+fi
+
+# Display available Qt versions to the user
+echo "Available Qt versions:"
+for i in "${!QT_VERSIONS[@]}"; do
+    echo "$((i + 1)): ${QT_VERSIONS[i]}"
+done
+
+# Ask user for the Qt version choice
+read -rp "Select a Qt version (1-${#QT_VERSIONS[@]}): " VERSION_CHOICE
+
+# Validate user choice
+if [[ "$VERSION_CHOICE" -lt 1 || "$VERSION_CHOICE" -gt "${#QT_VERSIONS[@]}" ]]; then
+    echo "Invalid choice. Exiting."
+    exit 1
+fi
+
+# Get the selected Qt version path
+SELECTED_QT="${QT_VERSIONS[$((VERSION_CHOICE - 1))]}"
+
+# Ask user for the deployment tool choice
+echo "Which deployment tool would you like to use? (1 for macdeployqt, 2 for macdeployqt6):"
+read -r TOOL_CHOICE
+
+# Set the deployment tool path based on user choice
+if [[ "$TOOL_CHOICE" == "1" ]]; then
+    QT_DEPLOY="${SELECTED_QT}/*/bin/macdeployqt"
+elif [[ "$TOOL_CHOICE" == "2" ]]; then
+    QT_DEPLOY="${SELECTED_QT}/*/bin/macdeployqt6"
+else
+    echo "Invalid choice. Exiting."
+    exit 1
+fi
+
+APP_PATH="../build/Odla.app"
+ICON_PATH="$APP_PATH/Contents/Resources/odla.icns"
+BACKGROUND_PATH="background.png"
+
+# Execute the app deployment
+echo "Executing: $QT_DEPLOY \"$APP_PATH\""
+# $QT_DEPLOY "$APP_PATH"
+
+# Check for error of macdeployqt
+if [[ $? -ne 0 ]]; then
+    echo "Error: $QT_DEPLOY \"$APP_PATH\" failed."
+    exit 1
+fi
+
+echo "Signing .app and library files..."
+read -rp "Enter your Team ID: " TEAM_ID
+SIGN_ID="Developer ID Application: KEMONIA RIVER S.R.L. ($TEAM_ID)"
+
+# Recursive signign
+sign_recursive() {
+    local path="$1"
+    codesign --force --verify --verbose --sign "$SIGN_ID" "$path" --options runtime
+    if [ $? -ne 0 ]; then
+        echo "Errore nella firma di: $path"
+    fi
 }
 
-# Definizione delle variabili per i percorsi relativi
-QT_DIR="../../../Qt"
-PRO_FILE="../odla.pro"
-BUILD_DIR="build"
-DEPLOY_DIR="../../Binari/MAC/ODLA"
-
-
-# Pulizia ambiente
-echo "Pulizia progetto..."
-rm -rf "$BUILD_DIR"
-mkdir "$BUILD_DIR"
-
-# Aggiorna i percorsi relativi a percorsi assoluti
-QT_DIR=$(get_absolute_path "$QT_DIR")
-PRO_FILE=$(get_absolute_path "$PRO_FILE")
-BUILD_DIR=$(get_absolute_path "$BUILD_DIR")
-DEPLOY_DIR=$(get_absolute_path "$DEPLOY_DIR")
-
-echo "Percorsi assoluti impostati:"
-echo "QT_DIR: $QT_DIR"
-echo "PRO_FILE: $PRO_FILE"
-echo "BUILD_DIR: $BUILD_DIR"
-echo "DEPLOY_DIR: $DEPLOY_DIR"
-
-# Seleziona la versione di Qt
-QT_VERSIONS=($(find "$QT_DIR" -maxdepth 1 -type d -name "6.*"))
-if [ ${#QT_VERSIONS[@]} -eq 0 ]; then
-  echo "Nessuna versione di Qt trovata in $QT_DIR."
-  exit 1
-fi
-
-echo "Versioni Qt trovate:"
-select QT_SELECTED in "${QT_VERSIONS[@]}"; do
-  if [ -n "$QT_SELECTED" ]; then
-    break
-  fi
-  echo "Scelta non valida. Riprova."
+# Firma dei framework
+for framework in "$APP_PATH/Contents/Frameworks/"*; do
+    sign_recursive "$framework"
 done
 
-# Aggiorna il percorso relativo della versione di Qt selezionata a percorso assoluto
-QT_SELECTED=$(get_absolute_path "$QT_SELECTED")
-echo "Versione di Qt selezionata: $QT_SELECTED"
-
-# Seleziona il compilatore
-COMPILERS=($(find "$QT_SELECTED" -maxdepth 1 -type d ! -name "$(basename "$QT_SELECTED")"))
-echo "Compilatori trovati:"
-select COMPILER_DIR in "${COMPILERS[@]}"; do
-  if [ -n "$COMPILER_DIR" ]; then
-    break
-  fi
-  echo "Scelta non valida. Riprova."
+# Firma dei plug-in
+for plugin in "$APP_PATH/Contents/PlugIns/"*; do
+    sign_recursive "$plugin"
 done
 
-# Aggiorna il percorso del compilatore a percorso assoluto
-COMPILER_DIR=$(get_absolute_path "$COMPILER_DIR")
-echo "Compilatore selezionato: $COMPILER_DIR"
+# Firma dell'app principale
+sign_recursive "$APP_PATH"
 
-QT_PATH="$COMPILER_DIR"
-QMAKE="$QT_PATH/bin/qmake"
-MACDEPLOYQT="$QT_PATH/bin/macdeployqt6"
-MAKE="make"
-
-# Aggiorna il percorso di QMAKE e MACDEPLOYQT a percorso assoluto
-QMAKE=$(get_absolute_path "$QMAKE")
-MACDEPLOYQT=$(get_absolute_path "$MACDEPLOYQT")
-echo "Usando qmake da: $QMAKE"
-echo "Usando macdeployqt da: $MACDEPLOYQT"
-
-# Verifica esistenza file progetto
-if [ ! -f "$PRO_FILE" ]; then
-  echo "ERRORE CRITICO: File progetto non trovato"
-  echo "Percorso cercato: $PRO_FILE"
-  exit 1
-fi
-
-echo "Trovato progetto in: $PRO_FILE"
-
-# Aggiorna i percorsi di BUILD_DIR e a percorsi assoluti
-BUILD_DIR=$(get_absolute_path "$BUILD_DIR")
-echo "Build directory: $BUILD_DIR"
-
-# Build progetto
-echo "Eseguo qmake..."
-cd "$BUILD_DIR" || exit 1
-"$QMAKE" "$PRO_FILE" -spec macx-clang CONFIG+=qtquickcompiler
-if [ $? -ne 0 ]; then
-  echo "ERRORE qmake"
-  exit 1
-fi
-
-echo "Compilazione progetto..."
-$MAKE -j12
-if [ $? -ne 0 ]; then
-  echo "ERRORE compilazione"
-  exit 1
-fi
-cd ..
-
-# Trova Odla.app
-APP_CANDIDATES=( $(find "$BUILD_DIR" -type d -name "Odla.app" -print0 | xargs -0 ls -td) )
-if [ ${#APP_CANDIDATES[@]} -eq 0 ]; then
-  echo "Nessuna applicazione Odla.app trovata."
-  exit 1
-fi
-
-echo "Seleziona l'applicazione da usare:"
-select APP_PATH in "${APP_CANDIDATES[@]}"; do
-  if [ -n "$APP_PATH" ]; then
-    break
-  fi
-  echo "Scelta non valida. Riprova."
-done
-
-# Aggiorna il percorso dell'applicazione a percorso assoluto
-APP_PATH=$(get_absolute_path "$APP_PATH")
-echo "Applicazione selezionata: $APP_PATH"
-
-# Esegui il deploy dell'app
-"$MACDEPLOYQT" "$APP_PATH"
-
-# Firma digitale dell'eseguibile
-CODESIGN_ID="Developer ID Application: KEMONIA RIVER S.R.L. (SWB463YGY7)"
-ENTITLEMENTS="entitlements.plist"
-codesign --force --options runtime --deep --sign "$CODESIGN_ID" --entitlements "$ENTITLEMENTS" "$APP_PATH"
-
-# Ottieni la versione dal tag git
+# Get the version from the latest git tag
 VERSION=$(git -C ../ describe --tags --abbrev=0)
+DMG_NAME="ODLA_${VERSION}"
 
-# Crea il DMG
+# Create the DMG
 create-dmg \
-  --volname "ODLA Installer $VERSION" \
-  --volicon "installer.icns" \
+  --volname $DMG_NAME \
+  --volicon "$ICON_PATH" \
   --window-pos 200 120 \
   --window-size 660 420 \
   --icon-size 170 \
   --icon "Odla.app" 170 170 \
   --hide-extension "Odla.app" \
   --app-drop-link 490 170 \
-  --background "background.png" \
-  "ODLA $VERSION.dmg" \
+  --background "$BACKGROUND_PATH" \
+  "$DMG_NAME.dmg" \
   "$APP_PATH"
 
-echo "BUILD COMPLETATO CON SUCCESSO!"
+# Chiedi all'utente se vuole procedere con la notarizzazione
+read -rp "Would you like to notarize this app? (y/n): " NOTARIZE_CHOICE
+
+# Controlla la scelta dell'utente
+if [[ "$NOTARIZE_CHOICE" == "y" ]]; then
+    echo "Notarizing..."
+    # Inserisci qui il comando di notarizzazione
+elif [[ "$NOTARIZE_CHOICE" == "n" ]]; then
+    echo "GoodBye!"
+    exit 1
+else
+    echo "Scelta non valida. Esco."
+    exit 1
+fi
+
+# Sign the DMG file
+echo "Signing DMG..."
+codesign -vvv --deep --strict --sign "Developer ID Application: KEMONIA RIVER S.R.L. ($TEAM_ID)" --entitlements "entitlements.plist" "ODLA_${VERSION}.dmg"
+
+# Ask for Apple credentials
+read -rp "Enter your app-specific password: " APP_SPECIFIC_PASSWORD
+
+# Notarize the DMG
+echo "Uploading file for notarization..."
+xcrun notarytool submit "$DMG_NAME.dmg" --apple-id accordinoandrea12@gmail.com --password "$APP_SPECIFIC_PASSWORD" --team-id "$TEAM_ID" --wait
+
+# Ask user to confirm before proceeding to staple
+echo "Wait for the notarization email confirmation. Press 1 to continue after confirmation."
+read -rp "Enter 1 to continue: " CONTINUE
+if [[ "$CONTINUE" != "1" ]]; then
+    echo "Exiting without stapling."
+    exit 1
+fi
+
+# Staple the notarized application
+TEMP_FOLDER=$(mktemp -d)
+cp -R "$APP_PATH" "$TEMP_FOLDER/"
+xcrun stapler staple "$TEMP_FOLDER/Odla.app"
+xcrun stapler validate "$TEMP_FOLDER/Odla.app"
+
+
+DMG_NAME_NOTARIZED="ODLA_${VERSION}_notarized"
+
+# Create the final notarized DMG
+create-dmg \
+  --volname $DMG_NAME \
+  --volicon "$ICON_PATH" \
+  --window-pos 200 120 \
+  --window-size 660 420 \
+  --icon-size 170 \
+  --icon "Odla.app" 170 170 \
+  --hide-extension "Odla.app" \
+  --app-drop-link 490 170 \
+  --background "$BACKGROUND_PATH" \
+  "$DMG_NAME_NOTARIZED.dmg" \
+  "$TEMP_FOLDER/Odla.app"
+
+# Clean up temporary folder
+rm -rf "$TEMP_FOLDER"
+echo "Done! Notarized DMG created: $DMG_NAME_NOTARIZED.dmg"

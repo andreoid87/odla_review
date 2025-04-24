@@ -15,7 +15,6 @@ class ButtonInsertion : public Button
 
 public:
     ButtonInsertion(QWidget *parent, QSqlRecord record);
-    QString table() const           override {return "BUTTON_INSERTION";}
 
 public slots:
     void appendDigit(QString digit); //Append digit to label and update value for command to be sent

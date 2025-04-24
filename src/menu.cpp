@@ -13,7 +13,6 @@ Menu* Menu::_currentMenu = nullptr;
 
 Menu::Menu(QWidget *parent, QSqlRecord record) : QWidget(parent)
 {
-
     _record = record;
     _db = Database::instance();
     setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Maximum);
@@ -36,14 +35,14 @@ Menu::Menu(QWidget *parent, QSqlRecord record) : QWidget(parent)
     //Define page indicator
     _leftArrow.setParent(this);
     QPixmap tmpIcon;
-    tmpIcon.loadFromData(_db->getValue("LEFT_ARROW_ICON", "IMAGE").toByteArray());
+    tmpIcon.loadFromData(_db->getSetting("left_arrow_icon", "image").toByteArray());
     _leftArrow.setPixmap(tmpIcon.scaled(ARROW_SIZE,ARROW_SIZE, Qt::KeepAspectRatio));
     _leftArrow.setStyleSheet("background:transparent");
     _leftArrow.setAlignment(Qt::AlignCenter);
     _leftArrow.setFixedWidth(ARROW_SIZE);
 
     _rightArrow.setParent(this);
-    tmpIcon.loadFromData(_db->getValue("RIGHT_ARROW_ICON", "IMAGE").toByteArray());
+    tmpIcon.loadFromData(_db->getSetting("right_arrow_icon", "image").toByteArray());
     _rightArrow.setPixmap(tmpIcon.scaled(ARROW_SIZE,ARROW_SIZE, Qt::KeepAspectRatio));
     _rightArrow.setStyleSheet("background:transparent");
     _rightArrow.setAlignment(Qt::AlignCenter);
@@ -65,7 +64,7 @@ Menu::Menu(QWidget *parent, QSqlRecord record) : QWidget(parent)
     _header.setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
     _header.setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Fixed);
     QPixmap logo;
-    logo.loadFromData(_db->getValue("ODLA_LOGO", "IMAGE").toByteArray());
+    logo.loadFromData(_db->getSetting("odla_logo", "image").toByteArray());
     _header.setPixmap(logo);
     _header.setStyleSheet("background-color:#d54e3f;border-radius: 20px;");
     _header.setFixedHeight(60);
@@ -325,6 +324,7 @@ void Menu::selectElement(QString absPosString)
  */
 void Menu::selectElement(Button * button, bool mute)
 {
+    Q_UNUSED(mute);
     if(button == nullptr || button == Button::currentButton()) return;
     // Now that we have sure an element Redraw page if needed
     showNewPage(button->page());
@@ -359,25 +359,25 @@ void Menu::selectElement(int absPos, bool mute)
  */
 bool Menu::standardNavigation(QString key)
 {
-    if(key == "LEFT")
+    if(key == "left")
         selectLeftItem();
-    else if(key == "RIGHT")
+    else if(key == "right")
         selectRightItem();
-    else if(key == "UP")
+    else if(key == "up")
         selectUpperItem();
-    else if(key == "DOWN")
+    else if(key == "down")
         selectLowerItem();
-    else if(key == "FNLEFT")
+    else if(key == "fnleft")
         showPrevPage();
-    else if(key == "FNRIGHT")
+    else if(key == "fnright")
         showNextPage();
-    else if(key == "FNUP")
+    else if(key == "fnup")
         selectFirstItem();
-    else if(key == "FNDOWN")
+    else if(key == "fndown")
         selectLastItem();
-    else if(key == "UNDO")
+    else if(key == "undo")
         swapPrevItem();
-    else if(key == "REDO")
+    else if(key == "redo")
         swapNextItem();
     else
         return false;
@@ -405,7 +405,7 @@ bool Menu::swapItems(int pos1, int pos2)
     _numPadLayout->addWidget(item1, item1->row(), item1->column());
     _numPadLayout->addWidget(item2, item2->row(), item2->column());
     selectElement(item1);
-    QString message = _db->speechText("ON_SWAPPED_BUTTON");
+    QString message = _db->speechText("on_swapped_button");
     VoiceOver::instance()->say(message.arg(item1->speechTitle()).arg(item2->speechTitle()));
     return true;
 }
@@ -529,4 +529,18 @@ void Menu::swapPrevItem()
     int currentPos = Button::currentButton()->absPos();
     swapItems(currentPos, currentPos - 1);
     showNewPage(Button::currentButton()->page());
+}
+
+/*!
+ *  \brief Menu::replaceKey
+ *
+ *  Check into db special keys to be replaced
+ */
+QString Menu::replaceKey(QString key)
+{
+    QString filter = QString("menu_id='%1' and key='%2'").arg(menuID(), key);
+    QList <QSqlRecord> records = _db->allTableRecords("menu_key_replacement", filter);
+    if (!records.isEmpty())
+        return records.at(0).value("replace_key").toString();
+    return key;
 }

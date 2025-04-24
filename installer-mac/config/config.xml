@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<!-->For Summary of Configuration File Elements visit:              <-->
+<!-->https://doc.qt.io/qtinstallerframework/ifw-globalconfig.html   <-->
+<Installer>
+    <Name>ODLA</Name>
+    <Version>1.0.51</Version>
+    <Title>ODLA Installer</Title>
+    <Publisher>Kemonia River</Publisher>
+    <ProductUrl>http://www.odlamusic.com/</ProductUrl>
+    <InstallerWindowIcon>installer</InstallerWindowIcon>
+    <InstallerApplicationIcon>installer</InstallerApplicationIcon>
+    <WizardStyle>Modern</WizardStyle>
+    <Watermark>watermark.png</Watermark>
+    <TargetDir>/Applications/ODLA</TargetDir>
+    <RunProgram>open</RunProgram>
+    <RunProgramArguments>
+        <Argument>/Applications/ODLA/odla.app</Argument>
+    </RunProgramArguments>
+    <StartMenuDir>ODLA</StartMenuDir>
+    <MaintenanceToolName>Uninstall</MaintenanceToolName>
+    <AllowNonAsciiCharacters>true</AllowNonAsciiCharacters>
+    <ControlScript>controlscript.qs</ControlScript>
+    <!--Background>Background is only for MacStyle</Background-->
+    <!--Background>background.png</Background-->
+    <!--Banner>Banner is only for ModernStyle</Banner-->
+    <Banner>krbanner.png</Banner>
+</Installer>

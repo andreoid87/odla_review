@@ -6,11 +6,11 @@
 
 #ifdef Q_OS_MAC
 #include "appnap.h"
-QString currentOS = "MAC";
+QString currentOS = "mac";
 #elif defined(Q_OS_WIN)
-QString currentOS = "WIN";
+QString currentOS = "win";
 #elif defined(Q_OS_LINUX)
-QString currentOS = "LINUX";
+QString currentOS = "linux";
 #endif
 
 
@@ -26,7 +26,6 @@ bool isDebug = false;
 int main(int argc, char *argv[])
 {
     // Enable HI-DPI support
-    SingleApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
     SingleApplication app(argc, argv);
 
     // This program runs as a daemon only tray-icon

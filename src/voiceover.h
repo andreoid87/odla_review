@@ -52,10 +52,10 @@ public:
 private:
     explicit VoiceOver(QObject *parent = nullptr);
     void run() override;
-    bool getFlag(QString typeAndFlagName)           {return _db->getValue("SPEECH_" + typeAndFlagName, "BOOLEAN_VALUE").toBool();}
-    int getPos(QString typeAndFlagName)             {return _db->getButtonPosition("SPEECH_" + typeAndFlagName);}
-    float getNumValue(QString typeAndFlagName)      {return _db->getValue("SPEECH_" + typeAndFlagName, "NUMERIC_VALUE").toReal();}
-    void setValue(QString typeAndFlagName, QString value)  {_db->setValue("SPEECH_" + typeAndFlagName, "NUMERIC_VALUE", value);}
+    bool getFlag(QString typeAndFlagName)           {return _db->getSetting("speech_" + typeAndFlagName, "boolean_value").toBool();}
+    int getPos(QString typeAndFlagName)             {return _db->getButtonPositionRecord("speech_" + typeAndFlagName).value("position").toInt();}
+    float getNumValue(QString typeAndFlagName)      {return _db->getSetting("speech_" + typeAndFlagName, "numeric_value").toReal();}
+    void setSetting(QString typeAndFlagName, QString value)  {_db->setSetting("speech_" + typeAndFlagName, "numeric_value", value);}
 
     static VoiceOver* _instance;
     bool _syntActive;
@@ -80,7 +80,7 @@ public slots:
     void changeSpeed(QJsonObject deltaString);
     void changeVolume(QJsonObject deltaString);
     void toggleActivation();
-    void setLanguage();
+    void updateLanguage(QString lang);
     QString cardinalToOrdinal(QString string);
     QString readableFraction(QString string);
 

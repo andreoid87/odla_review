@@ -2,14 +2,13 @@
 #include "menu.h"
 #include "database.h"
 #include "metadata.h"
-#include "qmenu.h"
 #include <QApplication>
 #include <QtDebug>
 #include <QLabel>
 
 
 const QString Button::_defaultStylesheet = QString( "Button{border-radius: 15px;background-color: #2f2f2f;}"
-                                                        "Button:hover{background-color: #d54e3f;}");
+                                                   "Button:hover{background-color: #d54e3f;}");
 Button* Button::_selectedButton = nullptr;
 
 #ifdef Q_OS_MACX
@@ -22,37 +21,37 @@ const int Button::_numberFontSize = 14;
 
 Button::Button(QWidget *parent, QSqlRecord record) : QToolButton(parent)
 {
-    
     _record = record;
     _db = Database::instance(nullptr);
     if(hasSpecialStylesheet())
-        setStyleSheet(_record.value("specialStylesheet").toString());
+        setStyleSheet(record.value("special_stylesheet").toString());
     else
         setStyleSheet(_defaultStylesheet);
-
+    
     // Set the Label with number in top left corner
     _numberLabel.setParent(this);
     _numberLabel.setText(QString::number(relPos() + 1));
     _numberLabel.setAlignment(Qt::AlignTop | Qt::AlignLeft);
     _numberLabel.setFont(_db->getFont(_numberFontSize, QFont::Bold));
     _numberLabel.setStyleSheet("background:transparent; color:white; padding:0px; margin:4px; border:none;");
-
+    
     // Set the Label with title at bottom center
     _titleLabel.setParent(this);
     _titleLabel.setWordWrap(true);
     _titleLabel.setFont(_db->getFont(_titleFontSize, QFont::Bold));
     _titleLabel.setStyleSheet("background:transparent; color:white; padding:gray; margin:0px; border:none;");
     _titleLabel.setMargin(5);
-
+    
     setVisible(false);
     select(false);
     setAttribute(Qt::WA_TransparentForMouseEvents);
     connect(static_cast<Menu*>(parent), &Menu::menuTitleUpdated,this, &Button::updateLanguageStrings);
-
+    
     // This commands prevent unwanted moving of buttons menu when page changes
     QSizePolicy fixSize = sizePolicy();
     fixSize.setRetainSizeWhenHidden(true);
     setSizePolicy(fixSize);
+    //_commandsMap = _db->getButtonCommands(buttonID());
 }
 
 /*!
@@ -79,7 +78,8 @@ void Button::select(bool selection)
 void Button::setNewPosition(int newPos)
 {
     if(newPos == absPos())  return;
-    _db->setButtonPosition(buttonID(), newPos);
+    _db->setButtonPosition(buttonID(), newPos);     // db record
+    _record.setValue("position", newPos);   // local record
     _numberLabel.setText(QString::number(relPos() + 1));
     QToolButton::update();
 }
@@ -102,18 +102,18 @@ void Button::setButtonIcon()
  *  \brief Button::command
  *  \par column
  *
- *  Execute (through MOC meta-call) the method written in the db
- *  under a column named like ODLA key name
+ *  Execute (through MOC meta-call) the method written in the button_command db table
+ *  that table has 3 columns: button_id, command and key
  *
- *  i.e. if "ENTER" is pressed it search the method name written under "ENTER" column
+ *  i.e. if "enter" is pressed it search the method name written under "key" column
  *  and invoke it after eventually resolve some reference
  */
-void Button::command(QString column)
+void Button::command(QString key)
 {
     bool isNumber = false;
-    column.toInt(&isNumber);
-    QString commandID = _record.value(column).toString();
-    Metadata::invokeVoid(commandID, true); // if called by button assume that command is always allowed
+    key.toInt(&isNumber);
+    //TODO: personalize with key pressed on selected button???
+    Metadata::invokeVoid(_record); // if called by button assume that command is always allowed
     updateButton();
 }
 

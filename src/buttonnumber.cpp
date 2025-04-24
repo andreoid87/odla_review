@@ -20,7 +20,7 @@ ButtonNumber::ButtonNumber(QWidget *parent, QSqlRecord record) : Button(parent, 
  */
 void ButtonNumber::updateButton()
 {
-    _value = Database::instance()->getValue(buttonID(), "NUMERIC_VALUE").toString();
+    _value = Database::instance()->getSetting(buttonID(), "numeric_value").toString();
     _writtenTitleBase = loadWrittenTitle() + QString("\n-  %1  +").arg(_value);
     _titleLabel.setText(_writtenTitleBase);
     _speechTitleBase = loadSpeechTitle() + ": " + _value;

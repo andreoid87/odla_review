@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<Package>
+    <DisplayName>ODLA</DisplayName>
+    <Version>1.0.51</Version>
+    <ReleaseDate>2020-11-22</ReleaseDate>
+    <ForcedInstallation>true</ForcedInstallation>
+    <SortingPriority>2</SortingPriority>
+    <Script>installscript.qs</Script>
+    <Licenses>
+        <License name="End User License Agreement" file="License.txt" />
+    </Licenses>
+</Package>

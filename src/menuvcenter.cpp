@@ -1,8 +1,10 @@
 #include "menuvcenter.h"
+#include "src/buttonnumber.h"
+#include "src/buttontoggle.h"
+#include "src/buttoncommand.h"
 
 MenuVCenter::MenuVCenter(QWidget *parent, QSqlRecord record) : Menu(parent, record)
 {
-    
 }
 
 /*!
@@ -12,21 +14,22 @@ MenuVCenter::MenuVCenter(QWidget *parent, QSqlRecord record) : Menu(parent, reco
  */
 void MenuVCenter::navigator(QJsonObject command)
 {
-    bool isNumber =_record.value(command["value"].toString()).isValid();
-    int numpadPos = _record.value(command["value"].toString()).toInt();
-
+    QString key = replaceKey(command.value("value").toString());
+    bool isNumber;
+    int numpadPos = key.toInt(&isNumber);
+    qDebug() << "numpadPos" << numpadPos;
     if(isNumber)
     {
         auto item = itemAtNumpadPos(numpadPos);
         if(item)
         {
-           selectElement(item);
-           item->command("ENTER");
+            selectElement(item);
+            item->command("enter");
         }
     }
-    else if(command["value"] == "UP")
+    else if(command["value"] == "up")
         selectUpperItem();
-    else if(command["value"] == "DOWN")
+    else if(command["value"] == "down")
         selectLowerItem();
     else if(Button::currentButton())
         Button::currentButton()->command(command["value"].toString());
@@ -39,25 +42,19 @@ void MenuVCenter::navigator(QJsonObject command)
  */
 void MenuVCenter::loadButtons()
 {
-    QString filters = QString("parentMenu='%1'").arg(menuID());
-    filters += QString(" AND NOT type='INSERTION'");
-    filters += QString(" AND NOT type='TOGGLE_EX'");
-    auto buttonList = _db->allTableRecords("button", filters);
-
-    for(auto &record :buttonList)
+    for(auto &record :_db->getMenuButtons(menuID()))
     {
-        if(record.value(_db->currentSoftware() + "_position").isNull())
-            continue;
-        
+        QString type = record.value("type").toString();
+
         Button* item;
 
-        if(record.value("type") == "NUMERIC")
+        if(type == "numeric")
             item = new ButtonNumber(this, record);
 
-        else if(record.value("type") == "TOGGLE")
+        else if(type.contains("toggle"))
             item = new ButtonToggle(this, record);
 
-        else if(record.value("type") == "STANDARD")
+        else if(type == "standard")
             item = new ButtonCommand(this, record);
         else
             continue;

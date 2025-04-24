@@ -2,7 +2,6 @@
 
 ButtonCommand::ButtonCommand(QWidget *parent, QSqlRecord record) : Button(parent, record)
 {
-    
     if(isDisclaimer()) //! \warning create subclass for this case only?
     {
         _numberLabel.setVisible(false);

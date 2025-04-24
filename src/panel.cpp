@@ -6,9 +6,11 @@
 #include <QProgressDialog>
 #include "panel.h"
 #include "database.h"
+#include "src/menuinsertion.h"
+#include "src/menustandard.h"
+#include "src/menuvcenter.h"
 #include "voiceover.h"
 #include "metadata.h"
-#include <QImageReader>
 
 extern bool isDebug;
 Panel* Panel::_instance;
@@ -23,7 +25,6 @@ Panel *Panel::instance(QWidget *parent)
 
 Panel::Panel(QWidget * parent) : QDialog(parent)
 {
-
     setWindowFlags(Qt::WindowStaysOnTopHint | Qt::FramelessWindowHint);
     _mainWidget = new QStackedWidget(this);
     setAttribute(Qt::WA_TranslucentBackground);
@@ -34,7 +35,6 @@ Panel::Panel(QWidget * parent) : QDialog(parent)
     mainLayout->addWidget(_mainWidget);
 
     _db = Database::instance(this);
-    // Ci si aspetta da qui che _app sia inizializzato?
 
     _voiceOver = VoiceOver::instance(this);
     _keyBoard = Keyboard::instance(this);
@@ -55,18 +55,13 @@ Panel::Panel(QWidget * parent) : QDialog(parent)
 
     // Add Action in reverse order
     auto it = _appActionMap.end();
-
     while (it != _appActionMap.begin()) {
         --it;  // Decrementa prima di accedere al valore
         _trayMenu->addAction(it.value());
     }
-
     _trayMenu->addAction(_quitAction);
     loadSettings();
-
-    QString iconPath = QString(":/%1").arg(ICON_NAME);
-    QIcon trayIcon(iconPath);
-    _tray.setIcon(trayIcon);
+    _tray.setIcon(QIcon(QString(":/%1").arg(ICON_NAME)));
     _tray.setContextMenu(_trayMenu);
     _tray.show();
 }
@@ -76,13 +71,14 @@ void Panel::setAvailableApplications()
     _quitAction = new QAction(this);
     connect(_quitAction, &QAction::triggered, this, &Panel::onQuitRequest);
 
-    const QStringList availableApps = _db->getAvailableApps();
-    for (const QString& appName : availableApps)
+    _availableApps = _db->getAvailableApps();
+
+    for (const QString& appID : _availableApps.keys())
     {
         auto appAction = new QAction(this);
         appAction->setCheckable(true);
         connect(appAction, &QAction::triggered, this, &Panel::onAppChanged);
-        _appActionMap[appName] = appAction;
+        _appActionMap[appID] = appAction;
     }
 }
 
@@ -93,22 +89,36 @@ void Panel::setAvailableApplications()
  *
  *  Called when a valid keystroke is sent
  */
-void Panel::onKeyEvent(QStringList keyStroke, bool pressed)
+void Panel::onKeyEvent(QList<int> keyStroke, Keyboard::keyEvent_t event)
 {
-    if(isDebug)
-        qDebug() << "pressed:"  << keyStroke;
-
-    if(Button::currentButton() && Button::currentButton()->isDisclaimer() && pressed)
+    if(Button::currentButton() && Button::currentButton()->isDisclaimer() && event == Keyboard::PRESS)
     {
         hideMenu();
         return;
     }
 
-    QString column = QString(pressed ? "on_press" : "on_release") + (isVisible() ? "_with_panel" : "_no_panel");
-    QString commandID = _db->getKeystrokeCommandID(keyStroke, column);
+    QString eventStr;
+    switch (event)
+    {
+        case Keyboard::PRESS:
+            eventStr = "press";
+            break;
+        case Keyboard::RELEASE:
+            eventStr = "release";
+            break;
+        case Keyboard::HOLD_SHORT:
+            eventStr = "hold_short";
+            break;
+        case Keyboard::HOLD_LONG:
+            eventStr = "hold_long";
+            break;
+        default:
+            return;
+    }
 
+    QSqlRecord commandRecord = _db->getKeystrokeRecord(keyStroke, eventStr, isVisible());
     if(!_loadingMenu)
-        Metadata::invokeVoid(commandID, _softwareConnected);
+        Metadata::invokeVoid(commandRecord);
 }
 
 /*!
@@ -126,7 +136,7 @@ void Panel::customButtonEnter(QJsonObject command)
 }
 
 /*!
- * \brief Panel::setLanguage
+ * \brief Panel::updateLanguage
  * \par lang
  *
  * Set language choosen beteween: "system", "en" and "it"
@@ -134,11 +144,10 @@ void Panel::customButtonEnter(QJsonObject command)
  */
 void Panel::setLanguage(QJsonObject command)
 {
-    QString lang = command["value"].toString();
-    _db->setValue("LANGUAGE","MULTI_CHOICE_VALUE", lang);
-    _voiceOver->setLanguage();
-    updateLabels();
-    emit languageChanged(); // so, all menu call notify it
+    _db->updateLanguage();
+    _voiceOver->updateLanguage(command["value"].toString());
+    updateActionLabels();
+    emit languageChanged(); // so, all menu can notify it
 }
 
 /*!
@@ -149,13 +158,13 @@ void Panel::setLanguage(QJsonObject command)
 void Panel::gotoWebsite()
 {
     QDesktopServices::openUrl(QUrl("http://www.odlamusic.com", QUrl::TolerantMode));
-    //_voiceOver->say(DBText("ON_ODLA_WEBSITE_OPENED"));
+    //_voiceOver->say(DBText("on_odla_website_opened"));
 }
 
 QString Panel::getInsertionButtonValue(QJsonObject buttonIDWrapper)
 {
     for(auto &menu : _menuMap)
-        if(menu->type() == "INSERTION")
+        if(menu->type() == "insertion")
             for(auto &button : menu->buttonList())
                 if(button->buttonID() == buttonIDWrapper["value"].toString())
                     return button->value();
@@ -213,20 +222,18 @@ void Panel::setPanelPosition(QJsonObject positionWrap)
     auto v = Qt::AlignVCenter;
     auto h = Qt::AlignHCenter;
 
-    if(pos.at(0) == "TOP") v = Qt::AlignTop;
-    else if(pos.at(0) == "BOTTOM") v = Qt::AlignBottom;
+    if(pos.at(0) == "top") v = Qt::AlignTop;
+    else if(pos.at(0) == "bottom") v = Qt::AlignBottom;
 
-    if(pos.at(1) == "LEFT") h = Qt::AlignLeft;
-    else if(pos.at(1) == "RIGHT") h = Qt::AlignRight;
+    if(pos.at(1) == "left") h = Qt::AlignLeft;
+    else if(pos.at(1) == "right") h = Qt::AlignRight;
 
     auto screenRect = QGuiApplication::screens().at(0)->availableGeometry();
     setGeometry(QStyle::alignedRect(Qt::LeftToRight, v | h, size(), screenRect));
 
-    _db->setValue("PANEL_POSITION","MULTI_CHOICE_VALUE",  positionWrap["value"].toString());
-
-    auto panelMenu = static_cast<MenuToggleEx*>(_menuMap["PANEL_POSITION"]);
-    if(panelMenu)
-        panelMenu->updateButtons();
+    //auto panelMenu = static_cast<MenuStandard*>(_menuMap["panel_position"]);
+    // if(panelMenu)
+    //     panelMenu->updateButtons();
 }
 
 /*!
@@ -235,29 +242,44 @@ void Panel::setPanelPosition(QJsonObject positionWrap)
  *
  *  Change current software
  */
-void Panel::setSoftware(QJsonObject appNameWrapper)
+void Panel::setSoftware(QJsonObject appID)
 {
-    QString appID = appNameWrapper["value"].toString();
-    qDebug() << "setting software: " << appID;
-    _app = App::instance(this, appID);
+    _db->updateSoftware();
+
+    QString app = appID.value("value").toString();
+    if(_currentAppID == app || app.isEmpty()) return;
+    _currentAppID = app;
+    _softwareConnected = false;
+
+    _app = App::instance(this, app);
     connect(_app, &App::appConnected, this, &Panel::checkSoftwareStatus);
     _app->connectToApp();
     for(auto appAction : _appActionMap)
         appAction->setChecked(false);
-    _appActionMap.value(appID)->setChecked(true);
+    _appActionMap.value(app)->setChecked(true);
     _reloadMenu.start();
-    _db->setValue("SOFTWARE","MULTI_CHOICE_VALUE",  _currentAppID = appID);
+
+}
+
+/*!
+ *  \brief Panel::isAppConnected
+ *
+ *  Return true if software is connected
+ */
+bool Panel::isAppConnected()
+{
+    return _softwareConnected;
 }
 
 void Panel::checkSoftwareStatus(bool connected)
 {
+    if(isDebug)
+        qDebug() << "app connected?" << connected;
+
     _softwareConnected = connected;
 
-    if(isDebug)
-        qDebug() << "App connected?" << connected;
-
-    if(!_softwareConnected && Menu::currentMenu() != _menuMap["SOFTWARE"])
-        hideMenu();
+    if(!_softwareConnected)
+        hideMenu();    
 }
 
 /*!
@@ -276,32 +298,29 @@ void Panel::loadMenu()
 
     _menuMap.clear();
 
-    auto recordsList = _db->allTableRecords("menu");
-    qDebug() << "menu size"<< recordsList.size();
+    // TODO: remove DB filter from this class
+    QList<QSqlRecord> menuRecordList = _db->allTableRecords("menu", QString("software_id = 'any' or software_id = '%1'").arg(_currentAppID));
+    qDebug() << "menu size"<< menuRecordList.size();
 
-    QProgressDialog b (_db->writtenText("LOADING_MENU"), "", 0, recordsList.size(), this);
+    QProgressDialog b (_db->writtenText("loading_menu"), "", 0, menuRecordList.size(), this);
     b.setCancelButton(nullptr);
     b.show();
     int progress = 0;
 
-    for(auto &record : recordsList)
+    for(QSqlRecord &menuRecord : menuRecordList)
     {
         b.setValue(++progress);
         QCoreApplication::processEvents();
-        if(!record.value(_currentAppID).toBool())
-            continue;
+        QString type = menuRecord.value("type").toString();
 
-        if(record.value("type").toString() == "STANDARD")
-            initMenu(new MenuStandard(this, record));
+        if(type == "insertion")
+            initMenu(new MenuInsertion(this, menuRecord));
 
-        if(record.value("type").toString() == "TOGGLE_EX")
-            initMenu(new MenuToggleEx(this, record));
+        if(type == "v_center")
+            initMenu(new MenuVCenter(this, menuRecord));
 
-        if(record.value("type").toString() == "INSERTION")
-            initMenu(new MenuInsertion(this, record));
-
-        if(record.value("type").toString() == "V_CENTER")
-            initMenu(new MenuVCenter(this, record));
+        else
+            initMenu(new MenuStandard(this, menuRecord));
     }
     b.hide();
     _loadingMenu = false;
@@ -315,17 +334,17 @@ void Panel::loadMenu()
 void Panel::loadSettings()
 {
     QJsonObject settingWrapper;
-    settingWrapper["value"] = _db->getValue("LANGUAGE","MULTI_CHOICE_VALUE").toString();
-    setLanguage(settingWrapper);
+    settingWrapper["value"] = _db->getActiveToggleExButtons("language").toString();
+    setLanguage(settingWrapper);    
 
-    settingWrapper["value"] = _db->getValue("PANEL_POSITION","MULTI_CHOICE_VALUE").toString();
+    settingWrapper["value"] = _db->getActiveToggleExButtons("panel_position").toString();
     setPanelPosition(settingWrapper);
 
-    settingWrapper["value"] = _db->getValue("PREFERRED_MENU_SELECTION","MULTI_CHOICE_VALUE").toString();
+    settingWrapper["value"] = _db->getActiveToggleExButtons("preferred_menu_selection").toString();
     setPreferredMenu(settingWrapper);
 
     //    This will be called at keyboard connection
-    //    settingWrapper["value"] = _db->getValue("SOFTWARE","MULTI_CHOICE_VALUE").toString();
+    //    settingWrapper["value"] = _db->getSetting("software","multi_choice_value").toString();
     //    setSoftware(settingWrapper);
 }
 
@@ -353,8 +372,8 @@ void Panel::setPreferredMenu(QJsonObject command)
     QString menuID = command["value"].toString();
     if(_menuMap[menuID] == nullptr)
         return;
-    _db->setValue("PREFERRED_MENU_SELECTION","MULTI_CHOICE_VALUE",  menuID);
-    _menuMap["PREFERRED_MENU"] = _menuMap[menuID];
+
+    _menuMap["preferred_menu"] = _menuMap[menuID];
 }
 
 /*!
@@ -369,6 +388,7 @@ void Panel::onAppChanged()
     if (sender)
     {
         const QString& key = _appActionMap.key(sender);
+        _db->setActiveToggleButtons(key, true);
         QJsonObject wrapper;
         wrapper["value"] = key;
         setSoftware(wrapper);
@@ -384,27 +404,26 @@ void Panel::onAppChanged()
 void Panel::onQuitRequest()
 {
     QMessageBox messageBox(QMessageBox::Question,
-                           _db->writtenText("CONFIRM"),
-                           _db->writtenText("ON_ODLA_QUIT_REQUEST"),
+                           _db->writtenText("confirm"),
+                           _db->writtenText("on_odla_quit_request"),
                            QMessageBox::Yes | QMessageBox::No,
                            this);
-    messageBox.setButtonText(QMessageBox::Yes, _db->writtenText("YES"));
-    messageBox.setButtonText(QMessageBox::No, _db->writtenText("NO"));
 
     if (messageBox.exec() == QMessageBox::Yes)
         QCoreApplication::quit();
 }
 
 /*!
- *  \brief Panel::updateLabels
+ *  \brief Panel::updateActionLabels
  *
- *  Method to be called whenever language is changed in order to update all labels
+ *  Method to be called whenever language is set in order to update all labels
  */
-void Panel::updateLabels()
+void Panel::updateActionLabels()
 {
+    qDebug() << "updateActionLabels";
     for (const QString& appID : _appActionMap.keys())
-        _appActionMap.value(appID)->setText(_db->writtenText("USE_APP") + _db->writtenText(appID));
-    _quitAction->setText(_db->writtenText("ON_QUIT"));
+        _appActionMap.value(appID)->setText(_db->writtenText("use_app") + " " +_db->writtenText(_availableApps[appID]));
+    _quitAction->setText(_db->writtenText("on_quit"));
 }
 
 
@@ -415,14 +434,14 @@ void Panel::updateLabels()
  */
 void Panel::onKeyboardConnectionChanged(bool keyboardConnected)
 {
-    VoiceOver::instance()->say(_db->speechText(keyboardConnected ? "ON_KEYBOARD_CONNECTED" :"ON_KEYBOARD_DISCONNECTED"));
+    VoiceOver::instance()->say(_db->speechText(keyboardConnected ? "on_keyboard_connected" :"on_keyboard_disconnected"));
     _keyboardConnected = keyboardConnected;
 
     if(!keyboardConnected)
         return;
 
     QJsonObject softwareNameWrapper;
-    softwareNameWrapper["value"] = _db->getValue("SOFTWARE","MULTI_CHOICE_VALUE").toString();
+    softwareNameWrapper["value"] = _db->getActiveToggleExButtons("software").toString();
     setSoftware(softwareNameWrapper);
     hideMenu();
 }

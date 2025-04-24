@@ -16,17 +16,15 @@ class ButtonToggle : public Button
 
 public:
     ButtonToggle(QWidget *parent, QSqlRecord record);
-    QString table() const           override {return "BUTTON_TOGGLE";}
 
 public slots:
     void updateButton()             override;
     void updateLanguageStrings()    override;
     void sayTitleAndValue()         override;
-    QVariant loadValue()         override {return _db->getValue(buttonID(), "BOOLEAN_VALUE");}
+    QVariant loadValue()            override;
     QString writtenTitle()          override;
     QString speechTitle()           override;
-
-private:
+    void command(QString key)       override;
 
 };
 

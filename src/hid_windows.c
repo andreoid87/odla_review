@@ -131,6 +131,9 @@ extern "C" {
     static BOOLEAN initialized = FALSE;
 #endif /* HIDAPI_USE_DDK */
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wall"  // Disabilita i warning (esempio con GCC/Clang)
+
 struct hid_device_ {
         HANDLE device_handle;
         BOOL blocking;

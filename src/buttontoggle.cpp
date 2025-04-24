@@ -1,6 +1,7 @@
 #include "buttontoggle.h"
 #include "database.h"
 #include "voiceover.h"
+#include "menustandard.h"
 
 ButtonToggle::ButtonToggle(QWidget *parent, QSqlRecord record) : Button(parent, record)
 {
@@ -17,6 +18,7 @@ ButtonToggle::ButtonToggle(QWidget *parent, QSqlRecord record) : Button(parent, 
     _titleLabel.setAlignment(Qt::AlignBottom| Qt::AlignHCenter);
     QTimer::singleShot(0, this, &ButtonToggle::updateButton);
     QTimer::singleShot(0, this, &ButtonToggle::updateLanguageStrings);
+    connect(this, &ButtonToggle::buttonClicked, dynamic_cast<MenuStandard*>(parent), &MenuStandard::onButtonClicked);
 }
 
 /*!
@@ -30,8 +32,8 @@ void ButtonToggle::updateButton()
     setChecked(value);
     QPixmap switchIcon;
 
-    QString iconName = QString("TOGGLE_ICON_") + (value ? "ON" : "OFF");
-    auto bitArray = Database::instance()->getValue(iconName, "IMAGE").toByteArray();
+    QString iconName = QString("toggle_icon_") + (value ? "on" : "off");
+    auto bitArray = Database::instance()->getSetting(iconName, "image").toByteArray();
     switchIcon.loadFromData(bitArray);
     _backgroundLabel->setPixmap(switchIcon);
     _speechTitleBase = loadSpeechTitle();
@@ -65,6 +67,11 @@ void ButtonToggle::sayTitleAndValue()
     VoiceOver::instance()->say(_speechTitleBase);
 }
 
+QVariant ButtonToggle::loadValue()
+{
+    return _db->getButtonState(buttonID());
+}
+
 QString ButtonToggle::writtenTitle()
 {
     return _writtenTitleBase;
@@ -72,5 +79,15 @@ QString ButtonToggle::writtenTitle()
 
 QString ButtonToggle::speechTitle()
 {
-    return _db->speechText(loadValue().toBool() ? "ON_ENABLED" : "ON_DISABLED").arg(_speechTitleBase);
+    return _db->speechText(loadValue().toBool() ? "on_enabled" : "on_disabled").arg(_speechTitleBase);
+}
+
+void ButtonToggle::command(QString key)
+{
+    if(key=="enter")
+    {
+        _db->setActiveToggleButtons(buttonID(), !isChecked());
+        emit buttonClicked(this);
+    }
+    Button::command(key);
 }

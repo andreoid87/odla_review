@@ -2,20 +2,23 @@
 #define KEYBOARD_H
 
 #include <QObject>
+#include <QQueue>
+#include <QJsonObject>
 #include <QMap>
 #include <QElapsedTimer>
 #include <QSerialPort>
 #include <QThread>
 #include <QTimer>
 #include <QQueue>
+#include <QDebug>
 #include "hidapi.h"
-#include "database.h"
 
 typedef QList<uint8_t> ks_t;
 
 #define FIRST_PRESS_TIME 500
 #define REPEAT_PRESS_TIME 180
 #define DEBOUNCE_THRESHOLD 180
+#define HOLD_TIME 1000
 
 #define ODLA_USB_NAME                       L"ODLA Keyboard"
 #define ODLA_USB_VID                        0x04D8
@@ -97,6 +100,14 @@ class Keyboard : public QThread
 {
     Q_OBJECT
 public:
+    enum keyEvent_t : uint8_t
+    {
+        PRESS = 0,
+        RELEASE = 1,
+        HOLD_SHORT = 2,
+        HOLD_LONG = 3
+    };
+
     static Keyboard* instance(QObject *parent = nullptr);
     ~Keyboard();
 
@@ -104,7 +115,8 @@ public slots:
     void open(QString devicePath);
     void close();
     void checkConnection();
-    void sendQwerty(QJsonObject command);
+    void sendKeyboardEvent(QJsonObject command);
+    void sendKeystroke(QJsonObject command);
     void sendMidi(QJsonObject command);
     //void LedOff();
 
@@ -114,7 +126,7 @@ private:
     void run() override;
     void pressedKey(uint8_t keyCode);
     void releasedKey(uint8_t keyCode);
-    bool serialWrite(USBData_t pkt);
+    void serialWrite(USBData_t pkt);
 
     static const QList<QPair<int, int>> _vidPidToScan;
     QElapsedTimer _lastPressTimer;
@@ -123,27 +135,33 @@ private:
     QSerialPort _odlaSerial;
     QTimer _queueTimer;
     QTimer *_reSendTimer;
+    QTimer *_holdTimer;
+    QQueue<USBData_t> packetQueue;
+    QTimer serialQueueTimer;
     QQueue<ks_t> _ksQueue;
 
-    QStringList _currentPressedKeys;
+    QMap<int, bool> _repeatMap;
+    QList<int> _currentPressedKeys;
     int _currentModifiers;
     int _repeatKey;
     int _nextRepeatTime;
     int _lastKeyCode;
     bool _repeat;
+    bool _shortPress;
 
 signals:
-    void keyEvent(QStringList, bool);
+    void keyEvent(QList<int>, keyEvent_t);
     void keyboardConnectionChanged(bool);
 
     void repeatStart(int);
     void repeatStop();
 
 private slots:
+    void processQueue();
     void checkHotPlug();
     void ksSendTask();
-    void reSendLastKey();
-    void emitKeyPress(bool press);
+    void reSendLastKeystroke();
+    void onHoldTimerExpired();
 };
 
 #endif // KEYBOARD_H

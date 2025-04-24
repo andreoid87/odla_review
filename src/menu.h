@@ -4,13 +4,9 @@
 #include <QWidget>
 #include <QtSql>
 #include <QLabel>
-#include "database.h"
-#include "buttontoggle.h"
-#include "buttontoggleex.h"
-#include "buttonnumber.h"
-#include "buttoncommand.h"
-#include "buttoninsertion.h"
 #include <QVBoxLayout>
+#include "database.h"
+#include "button.h"
 
 /*!
  * \brief Menu class
@@ -52,7 +48,6 @@ protected:
     bool standardNavigation(QString key);
     bool showNewPage(int newPage);
     void sortItems();
-    bool mutexBool() {return _record.value("mutexBool").toBool();}
     bool hasBackground() {return !_record.value("background").isNull();}
     void paintEvent(QPaintEvent *event) override;
     int rel2AbsPos(int relPos)      {return _currentPage * 9 + relPos;}
@@ -67,6 +62,7 @@ protected:
     QHBoxLayout *_numPadAndArrowsLayout;
     QGridLayout *_numPadLayout;
     QLabel _leftArrow, _rightArrow;
+    QString replaceKey(QString key);
 
 public slots:
     /*!
@@ -91,7 +87,7 @@ public slots:
     void showPrevPage();
     void swapNextItem();
     void swapPrevItem();
-    virtual QString buttonValue(QJsonObject buttonNumberWrapper) {return "";};
+    virtual QString buttonValue(QJsonObject buttonNumberWrapper) {Q_UNUSED(buttonNumberWrapper); return "";};
 
 protected slots:
     void menuTitleUpdate();

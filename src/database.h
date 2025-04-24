@@ -6,8 +6,6 @@
 #include <QtSql>
 #include <QMutex>
 
-typedef QMap<QString, bool> modifier_t;
-
 /*!
  *  \brief Database class
  *
@@ -20,34 +18,45 @@ class Database : public QObject
 
 public:
     static Database* instance(QObject *parent = nullptr);
-    QString getLanguage(); // language selector
     QFont getFont(int size, QFont::Weight weigth, bool italic = false);
     bool initDb();
     QList<QSqlRecord> allTableRecords(QString table, QString filter = "");
 
-    QString getKeystrokeCommandID(QStringList keys, QString column);
-    QJsonObject getCommand(QString commandID);
-    QString getTextTranslated(QString textID); // get translated text    
-    QString getKeyName(int keyNumber, bool *repeat, bool *modifier);
+    QSqlRecord getKeystrokeRecord(QList<int> keys, QString event, bool panel);
+    QSqlRecord getCommand(QString commandID);
+    QString getTextTranslated(QString textID); // get translated text
+    QMap<int, bool> getRepeatKeys();
     quint8 getQwertyCode(QString readableKey);
     bool setButtonPosition(QString buttonID, int position);
-    int getButtonPosition(QString objID);
-    QStringList getAvailableApps();
+    QSqlRecord getButtonRecord(QString buttonID);
+    QSqlRecord getButtonPositionRecord(QString objID);
+    QList<QSqlRecord> getMenuButtons(QString menuID);
+    QMap<QString, QString> getAvailableApps();
     void forceReplace();
     bool insertToRecord(QString tableName, QString filter, QString fieldName, QVariant value, bool createIfNotExist);
+    QJsonObject extractJson(QString string);
+    QVariant getActiveToggleExButtons(QString menuID);
+    bool setActiveToggleButtons(QString buttonID, bool value);
+    bool getButtonState(QString buttonID);
+    //QMap<QString, QString> getButtonCommands(QString buttonID);
 
 public slots:
     QString version() {return QString(VERSION);}
-    QVariant getValue(QString key, QString type);
+    QVariant getSetting(QString key, QString type);
     QString fetchSetting(QJsonObject arguments);
-    bool setValue(QString objID, QString type, QVariant value); //setting setter
+    bool setSetting(QString objID, QString type, QVariant value); //setting setter
     void resetDatabase(); //copies "defaultValue" content in "value" and reboots the program
     QString speechText(QString textID);
     QString writtenText(QString textID);
     QString speechText(QJsonObject wrapper);
     QString writtenText(QJsonObject wrapper);
-    QString currentSoftware() {return getValue("SOFTWARE","MULTI_CHOICE_VALUE").toString();}
+    void updateSoftware();
+    void updateLanguage();
     void setAlternativeKeynum(QJsonObject arguments);
+    QString getActiveToggleExButtonTitle(QJsonObject arguments);
+    QString getVersion();
+    bool isMethodOffline(QMap<QString, QString> command);
+    bool haveMethodToClosePanel(QMap<QString, QString> command);
 
 private:
     QSqlDatabase _db;
@@ -56,7 +65,7 @@ private:
     QFont _defaultFont;
     QFile _DBFile;
     QMutex _mutex;
-    QMap<QStringList,int> _keystrokeMap;
+    QMap<QList<int>,int> _keystrokeMap;
     QStringList _availableLanguages;
     Database(QObject* parent);
     bool initTable(QString table);
@@ -66,13 +75,17 @@ private:
     QSqlRecord getFirstRecordFrom(QString tableName, QString filter);
     void loadKeyStrokes();
     QStringList getAvailableLanguages();
+    QString getSystemLanguage();
     QTranslator _qtTranslator;
     QTranslator _qtBaseTranslator;
     QTranslator _odlaTranslator;
     QDir _dbPath;
-    bool dbBadVersion(QString *DBVersion);
+    bool dbBadVersion();
     bool _forceReplace;
     bool _alternativeNumpad;
+    QSqlQuery safeQuery(QString QueryString);
+    QString _currentLanguage;
+    QString _currentSoftware;
 
 signals:
     void initialized();

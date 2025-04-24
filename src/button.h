@@ -32,7 +32,7 @@ public:
     Button(QWidget *parent, QSqlRecord record);
     void select(bool selection); //set button state to "hovered"
     void setNewPosition(int newPos); //Change button position in the menu
-    int absPos() const  {return  _db->getButtonPosition(buttonID());}
+    int absPos() const  {return  _record.value("position").toInt();}
     int relPos() const {return absPos() % 9;}
     int page() const {return absPos() / 9;}
     int row() const {return relPos() / 3;}
@@ -40,14 +40,13 @@ public:
     QString buttonID() const {return  _record.value("button_id").toString();}
     QString titleID() const {return  _record.value("title_id").toString();}
     void hideNumber() {_numberLabel.hide();}
-    virtual QString table() const = 0;
-    bool isDisclaimer()             {return buttonID().contains("DISCLAIMER");}
+    bool isDisclaimer()             {return buttonID().contains("disclaimer");}
 
     //! \warning move these methods to a global environment (or not?)
     static Button * currentButton() {return _selectedButton;}
 
 public slots:
-    void command(QString column);
+    virtual void command(QString key);
     QString posString() {return QString::number(absPos() + 1);}
     virtual QString writtenTitle() = 0;
     virtual QString speechTitle() = 0;
@@ -75,11 +74,15 @@ protected:
     QString loadSpeechTitle();
 
     bool hasIcon()                  {return ! _record.value("icon").isNull();}
-    bool hasSpecialStylesheet()     {return ! _record.value("specialStylesheet").isNull();}
+    bool hasSpecialStylesheet()     {return ! _record.value("special_stylesheet").isNull();}
     void setButtonIcon(); //Load pixmap from database and show it in _titlelabel
+    QMap<QString, QString> _commandsMap;
 
 protected slots:
     virtual void updateLanguageStrings() = 0;
+
+signals:
+    void buttonClicked(Button *button);
 };
 
 #endif // BUTTON_H

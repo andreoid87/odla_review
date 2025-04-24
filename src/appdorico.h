@@ -1,14 +1,6 @@
 #ifndef APPDORICO_H
 #define APPDORICO_H
 
-#include <QObject>
-#include <QProcess>
-#include <QWebSocket>
-#include <QJsonDocument>
-#include <QJsonArray>
-#include <QJsonObject>
-#include <QTimer>
-#include "voiceover.h"
 #include "app.h"
 
 class AppDorico : public App
@@ -23,12 +15,10 @@ class AppDorico : public App
         Connected
     };
 
-public:
-    static App *instance(QObject *parent = nullptr);
-    ~AppDorico() override;
 
 private:
-    QWebSocket _webSocket;
+    AppDorico(QObject *parent = nullptr);
+    ~AppDorico() override;
     state_t _state;
     bool _connected;
     QString _token;
@@ -36,9 +26,7 @@ private:
     bool _inStepTimeInput;
     bool _hasScore;
     bool _hasSelection;
-
     void sendJsonObj(QJsonObject msg);
-    explicit AppDorico(QObject *parent = nullptr);
 
 public slots:
     void send(QJsonObject command) override;
@@ -54,8 +42,9 @@ private slots:
 
     void checkState() override;
     void onAppConnectionError(QAbstractSocket::SocketError socketError) override;
-    void onIncomingData(const QString &speechMessage) override;
+    void onIncomingData(const QString &speechMessage) override {} // Dorico doesn't handle incoming data
 
+    friend class App;
 };
 
 #endif // APPDORICO_H

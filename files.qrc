@@ -1,6 +1,5 @@
 <RCC>
     <qresource prefix="/">
-        <file>stylesheet.txt</file>
         <file>fonts/BravuraText.otf</file>
         <file>fonts/Bravura.otf</file>
         <file>fonts/fa-regular-400.ttf</file>
@@ -15,6 +14,5 @@
         <file>odla.ico</file>
         <file>Musescore_Plugin/ODLA.png</file>
         <file>Musescore_Plugin/ODLA.qml</file>
-        <file>odla.png</file>
     </qresource>
 </RCC>

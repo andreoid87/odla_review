@@ -13,13 +13,15 @@ class MenuStandard : public Menu
 {
     Q_OBJECT
 public:
+
     explicit MenuStandard(QWidget *parent, QSqlRecord record);
-    QString type() override {return "STANDARD";}
+    QString type() override {return "standard";}
     void loadButtons() override;
 
 public slots:
     void navigator(QJsonObject buttonName) override;
     bool buttonEnter(QString dbKey) override;
+    void onButtonClicked(Button* button);
 
 };
 

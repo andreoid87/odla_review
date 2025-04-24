@@ -1,8 +1,11 @@
 #include "menustandard.h"
+#include "src/buttonnumber.h"
+#include "src/buttontoggle.h"
+#include "src/buttoncommand.h"
 
 MenuStandard::MenuStandard(QWidget *parent, QSqlRecord record) : Menu(parent, record)
 {
-    
+
 }
 
 /*!
@@ -22,7 +25,7 @@ void MenuStandard::navigator(QJsonObject command)
         if(item)
         {
            selectElement(item, true);
-           item->command("ENTER");
+           item->command("enter");
         }
     }
     else if(standardNavigation(keyName))
@@ -35,7 +38,7 @@ void MenuStandard::navigator(QJsonObject command)
  *  \brief MenuStandard::enterByKey
  *  \par dbKey
  *
- *  Give "ENTER" command of the button mapped in DB by key
+ *  Give "enter" command of the button mapped in DB by key
  */
 bool MenuStandard::buttonEnter(QString dbKey)
 {
@@ -43,11 +46,18 @@ bool MenuStandard::buttonEnter(QString dbKey)
     {
         if(button->buttonID() == dbKey)
         {
-            button->command("ENTER");
+            button->command("enter");
             return true;
         }
     }
     return false;
+}
+
+void MenuStandard::onButtonClicked(Button *button)
+{
+    Q_UNUSED(button);
+    for(Button* item : _buttonList)
+        item->updateButton();
 }
 
 /*!
@@ -57,24 +67,21 @@ bool MenuStandard::buttonEnter(QString dbKey)
  */
 void MenuStandard::loadButtons()
 {
-    QString filters = QString("parentMenu='%1'").arg(menuID());
-    filters += QString(" AND NOT type='INSERTION'");
-    filters += QString(" AND NOT type='TOGGLE_EX'");
-    auto buttonList = _db->allTableRecords("button", filters);
-
-    for(auto &record :buttonList)
+    for(auto &record : _db->getMenuButtons(menuID()))
     {
-        if(record.value(_db->currentSoftware() + "_position").isNull())
-            continue;
+        //qDebug() << "found button" << record.value("button_id").toString();
+        QString type = record.value("type").toString();
+
         Button* item;
-        if(record.value("type") == "NUMERIC")
+        if(type == "numeric")
             item = new ButtonNumber(this, record);
 
-        else if(record.value("type") == "TOGGLE")
+        else if(type.contains("toggle"))
             item = new ButtonToggle(this, record);
 
-        else if(record.value("type") == "STANDARD")
+        else if(type == "standard")
             item = new ButtonCommand(this, record);
+
         else
             continue;
 

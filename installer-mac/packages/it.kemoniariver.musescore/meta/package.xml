@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package>
+    <DisplayName>Musescore</DisplayName>
+    <Version>3.6.2</Version>
+    <ReleaseDate>2020-10-30</ReleaseDate>
+    <Default>true</Default>
+    <SortingPriority>1</SortingPriority>
+    <ForcedInstallation>true</ForcedInstallation>
+    <!--Script>installscript.qs</Script-->
+</Package>
+

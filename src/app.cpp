@@ -6,43 +6,18 @@
 #include <QRegularExpression>
 
 #include "app.h"
-#include "appcustom.h"
 #include "appdorico.h"
+#include "appcustom.h"
 #include "appmusescore3.h"
+#include "appmusescore4.h"
 #include "metadata.h"
 #include "qprogressdialog.h"
 
-App* App::_instance;
-QString App::_instanceName;
+QScopedPointer<App> App::_instance;
 
-App *App::instance(QObject *parent, QString appID)
+App::App(QObject *parent) : QObject(parent)
 {
-    if(_instance && _instanceName == appID)
-        return _instance;
-    else
-    {
-        if(_instance)
-        {
-            delete _instance;
-            _instance = nullptr;
-            Metadata::removeCallableInstance(_instance, false);
-
-        }
-        if(appID == "MUSESCORE3")
-            _instance = AppMusescore3::instance(parent);
-        else if(appID == "DORICO")
-            _instance = AppDorico::instance(parent);
-        else
-            _instance = new AppCustom(parent, appID); // This is not singleton, since we can have more than one custom app
-    }
-    Metadata::addCallableInstance(_instance, false);
-    _instanceName = appID;
-    return _instance;
-}
-
-App::App(QObject *parent, QString appID) : QObject(parent)
-{
-    _appID = appID;
+    qDebug() << "App constructor ";
     _db = Database::instance();
     _vo = VoiceOver::instance();
     _connected = false;
@@ -55,9 +30,8 @@ App::App(QObject *parent, QString appID) : QObject(parent)
     connect(&_webSocket, &QWebSocket::textMessageReceived, this, &App::onIncomingData);
     connect(_speechTimer, &QTimer::timeout, _speechLoop, &QEventLoop::quit);
     connect(&_app, &QProcess::readyReadStandardOutput, this, &App::onOutputFromApp);
-
-    QString dbKey = _appID + "_" + currentOS + "_APP_PATH";
-    QString appPath = _db->getValue(dbKey,"STRING_VALUE").toString();
+    QString dbKey = _appID + "_" + currentOS + "_app_path";
+    QString appPath = _db->getSetting(dbKey,"string_value").toString();
 
 #ifdef Q_OS_WIN
     _app.setProgram(appPath);
@@ -66,6 +40,27 @@ App::App(QObject *parent, QString appID) : QObject(parent)
     _app.setArguments(QStringList() << "-a" << appPath);
 #endif
     _app.setProcessChannelMode(QProcess::MergedChannels);
+}
+
+App* App::instance(QObject *parent, QString appID)
+{
+    qDebug() << "setting software: " << appID;
+
+    if (_instance.isNull() || typeid(*_instance.get()).name() != appID)
+    {
+        // Crea l'istanza in base al nome della classe
+        if (appID == "app_dorico")
+            _instance.reset(new AppDorico(parent));
+        else if (appID == "app_musescore_3")
+            _instance.reset(new AppMusescore3(parent));
+        else if (appID == "app_musescore_4")
+            _instance.reset(new AppMusescore4(parent));
+        else
+            _instance.reset(new AppCustom(parent));
+    }
+
+    _instance.get()->_appID = appID;
+    return _instance.data();
 }
 
 /*!
@@ -100,7 +95,7 @@ void App::checkState()
     {
         if(!_connected)
         {
-            VoiceOver::instance()->say(_db->speechText("ON_" + _appID + "_CONNECTED"));
+            VoiceOver::instance()->say(_db->speechText("on_" + _appID + "_connected"));
             _connected = true;
             emit appConnected(true);
         }
@@ -109,13 +104,13 @@ void App::checkState()
     {
         if(_connected)
         {
-            VoiceOver::instance()->say(_db->speechText("ON_" + _appID + "_DISCONNECTED"));
+            VoiceOver::instance()->say(_db->speechText("on_" + _appID + "_disconnected"));
             _connected = false;
             emit appConnected(false);
         }
         qDebug() << "attempting to connect to " + _db->writtenText(_appID)+ "..." << _webSocket.state();
-        QString address     = _db->getValue(_appID + "_" + "SOCKET_ADDRESS","STRING_VALUE").toString();
-        QString port        = _db->getValue(_appID + "_" + "SOCKET_PORT","STRING_VALUE").toString();
+        QString address     = _db->getSetting(_appID + "_" + "socket_address","string_value").toString();
+        QString port        = _db->getSetting(_appID + "_" + "socket_port","string_value").toString();
         qDebug() << "address: " + address + " port: " << port;
         _webSocket.open(QUrl(address + ":" + port));
     }
@@ -132,7 +127,7 @@ void App::onOutputFromApp()
  */
 void App::onAppConnectionError(QAbstractSocket::SocketError socketError)
 {
-    qDebug() << _db->writtenText("ON_SOCKET_ERROR") << socketError;
+    qDebug() << _db->writtenText("on_socket_error") << socketError;
 }
 
 App::~App()
@@ -151,17 +146,17 @@ QString App::findAppPath(QString defaultPath, QString appName)
     // Verifica se il file esiste nella directory di default
     if (QFile::exists(appPath))
     {
-        qDebug() << "App executable found at default location:" << appPath;
+        qDebug() << "app executable found at default location:" << appPath;
         return appPath;
     }
 
     // Altrimenti, cerca l'app a partire dalla root di C:
-    QDir rootDir("C:/");
+    QDir rootDir("c:/");
 
     QRegularExpression rx("^(" + QRegularExpression::escape(appName) + ")\\.exe$", QRegularExpression::CaseInsensitiveOption);
 
     QProgressDialog progressDialog;
-    progressDialog.setLabelText("Cercando " + appName + "...");
+    progressDialog.setLabelText("cercando " + appName + "...");
     progressDialog.setRange(0, 100); // Imposta una barra di avanzamento indeterminata
     progressDialog.setModal(true);
     progressDialog.show();
@@ -175,12 +170,12 @@ QString App::findAppPath(QString defaultPath, QString appName)
         progressDialog.setValue(progressDialog.value() + 1);
         if (rx.match(fileInfo.fileName()).hasMatch())
         {
-            qDebug() << "App executable found at:" << filePath;
+            qDebug() << "app executable found at:" << filePath;
             return filePath;
         }
     }
 
     // Se non viene trovata l'app, restituisci una stringa vuota
-    qDebug() << "App executable not found.";
+    qDebug() << "app executable not found.";
     return QString();
 }

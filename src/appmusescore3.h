@@ -33,6 +33,8 @@ public slots:
 
 protected slots:
     void onIncomingData(const QString &speechMessage) override;
+
+    friend class App;
 };
 
 #endif // MUSESCORE_PLUGIN_H

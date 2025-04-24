@@ -7,6 +7,7 @@
 #include <QTimer>
 #include <QProcess>
 #include <QEventLoop>
+#include <QScopedPointer>
 #include "database.h"
 #include "voiceover.h"
 
@@ -16,13 +17,9 @@ extern bool isDebug;
 class App : public QObject
 {
     Q_OBJECT
-public:
-    
-    App();
 
 public:
-    static App* instance(QObject *parent = nullptr, QString appID = "");
-    virtual ~App();
+    static App* instance(QObject *parent, QString appID);
 
 public slots:
     virtual QString readCursor()    {return "";}
@@ -41,10 +38,10 @@ protected slots:
     virtual void onOutputFromApp();
 
 protected:
-    App(QObject *parent, QString appID);
+    App(QObject *parent);
+    ~App();
     QString findAppPath(QString defaultPath, QString appName);
-    static App * _instance;
-    static QString _instanceName;
+    static QScopedPointer<App> _instance;
     bool _connected;
     QWebSocket _webSocket;
     bool _cursor;
@@ -60,6 +57,8 @@ protected:
 
 signals:
     void appConnected(bool);
+
+    friend class QScopedPointerDeleter<App>;
 };
 
 #endif // APP_H

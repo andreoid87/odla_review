@@ -1,19 +1,12 @@
 #include "appmusescore3.h"
 #include <QMap>
 #include <QDebug>
+#include "metadata.h"
 
-App* AppMusescore3::instance(QObject *parent)
+AppMusescore3::AppMusescore3(QObject *parent) : App(parent)
 {
-    if(!_instance)
-        return new AppMusescore3(parent);
-    return _instance;
+    Metadata::addCallableInstance(this, false);
 }
-
-AppMusescore3::AppMusescore3(QObject *parent) : App(parent, "MUSESCORE3")
-{
-
-}
-
 
 void AppMusescore3::onIncomingData(const QString &speechMessage)
 {
@@ -50,7 +43,7 @@ QString AppMusescore3::readCursor()
 {
     QJsonObject command;
     _statusRequested = false;
-    command["SpeechFlags"] = VoiceOver::instance()->getCursorFlagsString();
+    command["speech_flags"] = VoiceOver::instance()->getCursorFlagsString();
 
     if(_webSocket.state() == QAbstractSocket::ConnectedState)
     {
@@ -71,7 +64,7 @@ QString AppMusescore3::readStatus()
 {
     QJsonObject command;
     _statusRequested = false;
-    command["SpeechFlags"] = VoiceOver::instance()->getStatusFlagsString();
+    command["speech_flags"] = VoiceOver::instance()->getStatusFlagsString();
 
     if(_webSocket.state() == QAbstractSocket::ConnectedState)
     {

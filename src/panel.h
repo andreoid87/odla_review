@@ -1,14 +1,9 @@
 #ifndef PANEL_H
 #define PANEL_H
 
-#include "menustandard.h"
-#include "menutoggleex.h"
-#include "menuinsertion.h"
-#include "menuvcenter.h"
 #include "database.h"
+#include "src/app.h"
 #include "voiceover.h"
-#include "appmusescore3.h"
-#include "appdorico.h"
 #include "database.h"
 #include "keyboard.h"
 
@@ -18,6 +13,7 @@
 #include <QShowEvent>
 #include <QDesktopServices>
 #include <QStackedWidget>
+#include "menu.h"
 
 /*!
  * \brief Panel class
@@ -40,6 +36,7 @@ private:
     QAction *_useDorico;
     QAction *_useFinale;
     QStackedWidget *_mainWidget;
+    QMap<QString, QString> _availableApps;
 
     Database * _db;
     VoiceOver * _voiceOver;
@@ -69,11 +66,11 @@ public slots:
     void setPanelPosition(QJsonObject positionWrap);
     void setPreferredMenu(QJsonObject command); //Set menu opened by FN + OPTION keystroke
     void onAppChanged();
-    void setSoftware(QJsonObject softwareWrapper);
-
-    void onKeyEvent(QStringList keyStroke, bool pressed);
+    void setSoftware(QJsonObject appID);
+    bool isAppConnected();
+    void onKeyEvent(QList<int> keyStroke, Keyboard::keyEvent_t event);
     void customButtonEnter(QJsonObject command);
-    void updateLabels();
+    void updateActionLabels();
     void setLanguage(QJsonObject lang);
     void gotoWebsite();
     QString getInsertionButtonValue(QJsonObject buttonIDWrapper);

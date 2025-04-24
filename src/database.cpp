@@ -13,7 +13,6 @@ Database *Database::instance(QObject *parent)
 {
     if(!_instance)
         _instance = new Database(parent);
-    Metadata::addCallableInstance(_instance);
     return _instance;
 }
 
@@ -22,9 +21,11 @@ Database::Database(QObject *parent): QObject(parent)
     int id = QFontDatabase::addApplicationFont(":/fonts/InriaSans-Bold.ttf");
     _defaultFont = QFont(QFontDatabase::applicationFontFamilies(id).at(0));
     _dbPath = QDir(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation));
-    qRegisterMetaType<modifier_t>("modifier_t");
     _db = QSqlDatabase::addDatabase("QSQLITE");
     _forceReplace = false;
+    Metadata::addCallableInstance(this);
+    updateSoftware();
+    updateLanguage();
 }
 
 void Database::forceReplace()
@@ -42,7 +43,6 @@ void Database::forceReplace()
  */
 bool Database::initDb()
 {
-    QString DBVersion;
     // If database path does not exists create it
     if(!_dbPath.exists())
         _dbPath.mkpath(".");
@@ -64,15 +64,15 @@ bool Database::initDb()
     {
         qDebug() << "Database file found, checking for correct version";
         // Comparing version of current and hardcodeddb
-        if(dbBadVersion(&DBVersion) || _forceReplace)
+
+        qDebug() << "dbBadVersion()" << dbBadVersion() << "_forceReplace" << _forceReplace;
+        if(dbBadVersion() || _forceReplace)
             if(!replaceDBFile())
                 return criticalError(tr("File Error!"), tr("Could not replace database file!"));
         // If even after replacing the file, the versions do not match, the hardcoded version needs to be changed
-        if(dbBadVersion(&DBVersion))
-            return criticalError(tr("File Error!"), tr("Hardcorded DB file (%1) does not corresponding to version (%2)!").arg(DBVersion, VERSION));
+        if(dbBadVersion())
+            return criticalError(tr("File Error!"), tr("Hardcorded DB file does not corresponding to version (%1)!").arg(VERSION));
     }
-
-    //    _usedDb.setFileName(_dbPath.filePath("odla.db"));
 
     _DBFile.setFileName(_dbPath.filePath("odla.db"));
     setFilePermissions(_DBFile);
@@ -85,16 +85,17 @@ bool Database::initDb()
     if (!_db.open())
         return criticalError(tr("Database Error!"), _db.lastError().driverText());
 
-    QStringList tables = _db.tables();
-    for(auto &tables : _db.tables())
+    for(QString &tables : _db.tables())
         initTable(tables);
 
-    if(_tableMap["setting"] == nullptr)
+    if(_tableMap["menu"] == nullptr)
         return criticalError(tr("Database Error!"), "No data found!");
 
-    loadKeyStrokes();
     _availableLanguages = getAvailableLanguages();
-    _alternativeNumpad = getValue("ALTERNATIVE_NUMPAD", "BOOLEAN_VALUE").toBool();
+    updateSoftware(); // those two are needed
+    updateLanguage(); // to do all queryes
+    _alternativeNumpad = getSetting("alternative_numpad", "boolean_value").toBool();
+    loadKeyStrokes();
     qDebug() << "Alternative Keypad? " << _alternativeNumpad;
 
     emit initialized();
@@ -102,7 +103,7 @@ bool Database::initDb()
 }
 
 /*!
- * \brief Database::setValuetoDefault
+ * \brief Database::setSettingtoDefault
  *
  * Since in SETTINGS table it has value and defaultValue columns
  * This method simply copies "defaultValue" content in "value" and reboots the program.
@@ -117,15 +118,14 @@ void Database::resetDatabase()
 }
 
 /*!
- *  \brief Database::getValue
+ *  \brief Database::getSetting
  *  \param key
  *
  *  Get setting from SETTINGS table called by key and return it as
  *  QVariant, so caller has to choice  the variable-type to convert to
  */
-QVariant Database::getValue(QString objID, QString type)
+QVariant Database::getSetting(QString objID, QString type)
 {
-    //qDebug() << "get value" << objID << type;
     QString tableName = "setting";
     QString filter = QString("obj_ref_id='%1' AND type='%2'").arg(objID,type);
     auto retVal = getFirstRecordFrom(tableName, filter).value("value");
@@ -134,15 +134,125 @@ QVariant Database::getValue(QString objID, QString type)
 }
 
 /*!
+ * \brief Database::getButtonState
+ * \param buttonID
+ * \return state of button
+ * Get the state of a button from the database
+ */
+bool Database::getButtonState(QString buttonID)
+{
+    QString tableName = "button";
+    QString filter = QString("button_id='%1' and software_id = '%2'").arg(buttonID, _currentSoftware);
+    return getFirstRecordFrom(tableName, filter).value("type").toString().contains("toggle_on");
+}
+
+/*!
+ *  \brief Database::getActiveToggleExButtons
+ *  \param menuID
+ *
+ *  Get values of active button (active = true) from "button_toggle"
+ *  for all buttons joined with in button table have parent_menu
+ *  equal to menuID, using safeQuery method
+ */
+QVariant Database::getActiveToggleExButtons(QString menuID)
+{
+    QString query = QString(
+                        "SELECT json_extract(arguments, '$.value') AS extracted_value "
+                        "FROM button "
+                        "WHERE parent_menu = '%1' "
+                        "AND button.type = 'toggle_on_ex' "
+                        "AND software_id = '%2'"
+                        ).arg(menuID, _currentSoftware);
+
+    //qDebug() << "query" << query;
+
+    QSqlQuery q = safeQuery(query);
+    if (q.next())
+    {
+        return q.value("extracted_value");
+    }
+    return QVariant();
+}
+
+/*!
+ *  \brief Database::setActiveToggleButtons
+ *  \param menuID
+ *
+ *  Set values of active button (active = 1/0) of "button_toggle" table
+ * using safeQuery method and waiting for eventual trigger of the query
+ */
+bool Database::setActiveToggleButtons(QString buttonID, bool value)
+{
+    QString query = QString("UPDATE button SET type = REPLACE(type, '%1', '%2') WHERE button_id = '%3' AND software_id = '%4')")
+    .arg(value ? "on" : "off")  // Sostituisce 'on' o 'off' in base a 'value'
+        .arg(value ? "off" : "on")  // Sostituisce 'off' o 'on' in base a 'value'
+        .arg(buttonID)
+        .arg(_currentSoftware);
+
+    //qDebug() << query;
+    return safeQuery(query).exec();
+}
+
+/*
+ *  \brief Database::isMethodOffline
+ *  \param QMap<QString, QString> command (with software_id, class_name and method_name)
+ *  Check if a method can be called offline
+ *  checking on function table into "offline" column
+ */
+bool Database::isMethodOffline(QMap<QString, QString> command)
+{
+    QString tableName = "function";
+    QString filter = QString("software_id = '%1' AND class_name='%2' AND method_name='%3'")
+                         .arg(_currentSoftware, command["class_name"], command["method_name"]);
+    return getFirstRecordFrom(tableName, filter).value("offline").toBool();
+}
+
+/*
+ *  \brief Database::haveMethodToClosePanel
+ *  \param QMap<QString, QString> command (with software_id, class_name and method_name)
+ *  Check if a method have close panel after be called
+ *  checking on function table into "close_panel" column
+ */
+bool Database::haveMethodToClosePanel(QMap<QString, QString> command)
+{
+    QString tableName = "function";
+    QString filter = QString("software_id = '%1' AND class_name='%2' AND method_name='%3'")
+                         .arg(_currentSoftware, command["class_name"], command["method_name"]);
+    return getFirstRecordFrom(tableName, filter).value("close_panel").toBool();
+}
+
+/*!
+ *  \brief Database::getActiveToggleButtons
+ *  \param menuID
+ *
+ *  Get title of active button (active = true) from "button_toggle"
+ *  for all buttons joined with in button_position table have parent_menu
+ *  equal to menuID, using safeQuery method
+ */
+QString Database::getActiveToggleExButtonTitle(QJsonObject arguments)
+{
+
+    QString query = QString("SELECT title_id FROM button "
+                            "JOIN button_position ON button_toggle.button_id = button_position.button_id "
+                            "JOIN button ON button.button_id = button_position.button_id "
+                            "WHERE button_position.parent_menu = '%1' AND button_toggle.active = 1").arg(arguments.value("parent_menu").toString());
+    QSqlQuery q = safeQuery(query);
+    if (q.next())
+        return q.value("title_id").toString();
+    return "";
+}
+
+/*!
  *  \brief Database::fetchSetting
  *  \param arguments
  *
- * Do the same of getValue but only for text - can be used external
+ * Do the same of getSetting but only for text - can be used external
  * \todo: create a standard for this kind of call
  */
 QString Database::fetchSetting(QJsonObject arguments)
 {
-    return getValue(arguments["obj_id"].toString(), arguments["type"].toString()).toString();
+    //TODO:REMOVE
+    return getSetting(arguments["obj_ref_id"].toString(), arguments["type"].toString()).toString();
 }
 
 /*!
@@ -158,31 +268,87 @@ void Database::setAlternativeKeynum(QJsonObject arguments)
     case 0:
         _alternativeNumpad = false;
         break;
+    case 1:
         _alternativeNumpad = true;
+        break;
     default:
         _alternativeNumpad = !_alternativeNumpad;
         break;
     }
-    setValue("ALTERNATIVE_NUMPAD", "BOOLEAN_VALUE", _alternativeNumpad);
+    setSetting("alternative_numpad", "boolean_value", _alternativeNumpad);
 }
 
 /*!
- *  \brief Database::getButtonPosition
+ *  \brief Database::getButtonRecord
  *  \param buttonID
  *
- *  Get button position from DB
+ *  Get button info record from DB
  */
-int Database::getButtonPosition(QString buttonID)
+QSqlRecord Database::getButtonRecord(QString buttonID)
 {
     QString tableName = "button";
     QString filter = QString("button_id='%1'").arg(buttonID);
-    QString fieldName = currentSoftware() + "_position";
-    QSqlRecord record = getFirstRecordFrom(tableName, filter);
+    return getFirstRecordFrom(tableName, filter);
+}
 
-    if(record.isEmpty())
-        return -1;
-    else
-        return   record.value(fieldName).toInt();
+/*!
+ *  \brief Database::getMenuButtons
+ *  \param menuID
+ *
+ *  Get all records of buttons from DB of a specific menu
+ *  joining button and function table, foreign keys are
+ *  software_id, class_name and method_name
+ *  software_id is _currentSoftware
+ */
+QList<QSqlRecord> Database::getMenuButtons(QString menuID)
+{
+    QString query = QString(
+                        "SELECT button.button_id, button.software_id, button.type, button.class_name, "
+                        "button.method_name, button.arguments, button.parent_menu, button.position, "
+                        "button.commands, button.title_id, function.close_panel, function.offline, button.message_done "
+                        "FROM button "
+                        "JOIN function ON button.software_id = function.software_id "
+                        "AND button.class_name = function.class_name "
+                        "AND button.method_name = function.method_name "
+                        "WHERE button.parent_menu = '%1' AND button.software_id = '%2'"
+                        ).arg(menuID, _currentSoftware);
+
+    QSqlQuery q = safeQuery(query);
+    QList<QSqlRecord> retVal;
+    while (q.next())
+        retVal.append(q.record());
+    return retVal;
+}
+
+
+// /*!
+//  *  \brief Database::getButtonCommands
+//  *  \param buttonID
+//  *  \return QMap of button commands
+//  *
+//  *  Get the association between button and commands from DB
+//  */
+// QMap<QString, QString> Database::getButtonCommands(QString buttonID)
+// {
+//     QString query = QString("SELECT * FROM button_command WHERE button_id = '%1'").arg(buttonID);
+//     QSqlQuery q = safeQuery(query);
+//     QMap<QString, QString> retVal;
+//     while (q.next())
+//         retVal[q.value("key").toString()] = q.value("command").toString();
+//     return retVal;
+// }
+
+/*!
+ *  \brief Database::getButtonPositionRecord
+ *  \param buttonID
+ *
+ *  Get button position record from DB
+ */
+QSqlRecord Database::getButtonPositionRecord(QString buttonID)
+{
+    QString tableName = "button";
+    QString filter = QString("button_id='%1' and software_id = '%2'").arg(buttonID, _currentSoftware);
+    return getFirstRecordFrom(tableName, filter);
 }
 
 /*!
@@ -195,9 +361,8 @@ int Database::getButtonPosition(QString buttonID)
 bool Database::setButtonPosition(QString buttonID, int position)
 {
     QString tableName = "button";
-    QString fieldName = currentSoftware() + "_position";
-    QString filter = QString("button_id='%1'").arg(buttonID);
-    return insertToRecord(tableName, filter, fieldName, position, false);
+    QString filter = QString("button_id='%1' and software_id = '%2'").arg(buttonID, _currentSoftware);
+    return insertToRecord(tableName, filter, "position", position, false);
 }
 
 /*!
@@ -205,25 +370,38 @@ bool Database::setButtonPosition(QString buttonID, int position)
  *
  *  Get from DB the columns of available apps
  */
-QStringList Database::getAvailableApps()
+QMap<QString, QString> Database::getAvailableApps()
 {
-    QStringList retval;
-    QSqlRecord record = getFirstRecordFrom("command", "");
-
-    for (int i = 0; i < record.count(); ++i)
-        retval.append(record.field(i).name());
-    retval.removeAll("cmd_id");
+    QMap<QString, QString> retval;
+    // Get a List of all software in the software table ordere by "rank" excluding order = -1 (any)
+    QSqlQuery q = safeQuery("SELECT * FROM enum_type_software WHERE rank >= 0 ORDER BY rank ASC");
+    while (q.next())
+        retval[q.value("software_id").toString()] = q.value("title_id").toString();
     return retval;
 }
 
 /*!
- *  \brief Database::setValue
+ *  \brief Database::safeQuery
+ *  \param QueryString
+ *
+ *  Get QSqlQuery from query string using _mutex
+ */
+QSqlQuery Database::safeQuery(QString QueryString)
+{
+    QMutexLocker locker(&_mutex);
+    QSqlQuery q(_db);
+    q.exec(QueryString);
+    return q;
+}
+
+/*!
+ *  \brief Database::setSetting
  *  \param key
  *  \param value
  *
  *  Save new Setting in SETTINGS table if it is present, else create it
  */
-bool Database::setValue(QString objID, QString type, QVariant value)
+bool Database::setSetting(QString objID, QString type, QVariant value)
 {
     QString tableName = "setting";
     QString fieldName = "value";
@@ -243,26 +421,13 @@ bool Database::setValue(QString objID, QString type, QVariant value)
 QString Database::getTextTranslated(QString textID)
 {
     if(textID.isEmpty()) return "";
-    QString tableName = "translation";
-    QString filter = QString("text_id='%1'").arg(textID);
-    auto record = getFirstRecordFrom(tableName, filter);
-    return record.value(getLanguage()).toString();
-}
-
-/*!
- * \brief Database::getLanguage
- *
- *  get current setted language as string "it" "en", ecc.
- */
-QString Database::getLanguage()
-{
-    QString lang = getValue("LANGUAGE", "MULTI_CHOICE_VALUE").toString();
-    if(lang == "system")
+    QString query = QString("SELECT * FROM translation WHERE text_id = '%1' LIMIT 1").arg(textID);
+    QSqlQuery q = safeQuery(query);
+    if (q.next())
     {
-        QString systemLanguage = QLocale::system().uiLanguages().first().split('-').first();
-        return _availableLanguages.contains(systemLanguage) ? systemLanguage : "en";
+        return q.value(_currentLanguage).toString();
     }
-    return lang;
+    return "boh";
 }
 
 /*!
@@ -291,7 +456,7 @@ QString Database::writtenText(QString textID)
  */
 QString Database::speechText(QJsonObject wrapper)
 {
-    return Metadata::resolveString(Database::instance()->getTextTranslated(wrapper.value("textID").toString())).split("|").last();
+    return Metadata::resolveString(Database::instance()->getTextTranslated(wrapper.value("text_id").toString())).split("|").last();
 }
 /*!
  * \brief Database::speechText
@@ -300,8 +465,45 @@ QString Database::speechText(QJsonObject wrapper)
  */
 QString Database::writtenText(QJsonObject wrapper)
 {
-    return Metadata::resolveString(Database::instance()->getTextTranslated(wrapper.value("textID").toString())).split("|").first();
+    return Metadata::resolveString(Database::instance()->getTextTranslated(wrapper.value("text_id").toString())).split("|").first();
 }
+
+/*!
+ * \brief Database::updateSoftware
+ *
+ *  get current software querying table "enum_type_software" where in_use is 1
+ */
+void Database::updateSoftware()
+{
+    _currentSoftware = getFirstRecordFrom("enum_type_software", "in_use = 1").value("software_id").toString();
+    loadKeyStrokes();
+}
+
+
+/*!
+ * \brief Database::updateLanguage
+ *
+ *  update current setted language as string "it" "en", ecc.
+ */
+void Database::updateLanguage()
+{
+    _currentLanguage = getActiveToggleExButtons("language").toString();
+
+    if(_currentLanguage == "system")
+        _currentLanguage = _availableLanguages.contains(getSystemLanguage()) ? getSystemLanguage() : "en";
+}
+
+/*!
+ * \brief Database::getSystemLanguage
+ * \return systemLanguage
+ *
+ * Return a string with the system language in the format "it" "en" ecc.
+ */
+QString Database::getSystemLanguage()
+{
+    return QLocale::system().uiLanguages().first().split('-').first();
+}
+
 
 QStringList Database::getAvailableLanguages()
 {
@@ -393,33 +595,31 @@ bool Database::replaceDBFile()
  *
  *  Returns true if DB returns error, otherwise false
  */
-bool Database::dbBadVersion(QString *DBVersion)
+bool Database::dbBadVersion()
 {
-    QFile dbFile(_dbPath.filePath("odla.db"));
+    QFile file(":/odla.db");
+    if (!file.open(QIODevice::ReadOnly)) {
+        qWarning() << "Cannot open database file!";
+        return -1;
+    }
 
-    if (!dbFile.exists())
-        return true;
+    // SQLite header: user_version is at offset 60-63 (4 bytes, big-endian)
+    file.seek(60);
+    QByteArray data = file.read(4);
+    if (data.size() != 4) {
+        qWarning() << "Failed to read user_version!";
+        return -1;
+    }
 
-    _db.setDatabaseName(_dbPath.filePath("odla.db"));
-    //tmpDB.setConnectOptions("QSQLITE_USE_CIPHER=sqlcipher; SQLCIPHER_LEGACY=1");
-    //tmpDB.setPassword("n]y4ja:EZdfD$^8E");
-    if (!_db.open())
-        return true;
+    // Convert bytes to integer (big-endian)
+    int userVersion = (static_cast<unsigned char>(data[0]) << 24) |
+                      (static_cast<unsigned char>(data[1]) << 16) |
+                      (static_cast<unsigned char>(data[2]) << 8) |
+                      static_cast<unsigned char>(data[3]);
+    qWarning() << "App Version trimmed: " << QString(VERSION).remove(".").toInt();
+    qWarning() << "DB PRAGMA user_version: " << userVersion;
 
-    QSqlRelationalTableModel  table(nullptr, _db);
-    table.setTable("setting");
-    table.setFilter("obj_ref_id='VERSION'");
-    table.select();
-
-    *DBVersion= table.record(0).value("value").toString();
-    QString appVersion = QString(VERSION);
-
-    _db.close();
-
-    if(*DBVersion != appVersion)
-        return true;
-
-    return false;
+    return userVersion != QString(VERSION).remove(".").toInt();
 }
 
 /*!
@@ -439,27 +639,40 @@ bool Database::initTable(QString table)
 }
 
 /*!
- *  \brief Database::getKeystrokeCommand
- *  \param fn
- *  \param select
- *  \param chord
- *  \param slur
- *  \param key
- *  \param column
+ *  \brief Database::getKeystrokeRecord
+ *  \param keys (QList of keys listed on key_code_odla table)
+ *  \param event (event type)
+ *  \param panel (if the command with visible panel)
  *
- *  Get from db command associated with keystroke
- *  \warning should pass modifers (fn, select, ...) as flags
+ *  Get from db command associated with keystroke, combinations
+ *  of keystrokes could be found in keystroke_keys swap table for example:
+ *  keystroke_id key
+ *  0	0
+ *  1	0
+ *  1	function // 1 is function + 0
+ *  2	0
+ *  2	select // 2 is select + 0
+ *  3	1
+ *  4	1
+ *  4	function // 4 is function + 1
+ *  5	1
+ *  5	select
+ *  6	2
+ *  7	2
+ *  7	function
+ *
  */
-QString Database::getKeystrokeCommandID(QStringList keys, QString commandIDColumn)
+QSqlRecord Database::getKeystrokeRecord(QList<int> keys, QString event, bool panel)
 {
-    //Getting comand ID from kestrole table
-    keys.sort();
-    QString filter = QString("keystroke_id = '%1'").arg(_keystrokeMap.value(keys));
-    return getFirstRecordFrom("keystroke", filter).value(commandIDColumn).toString();
+    //Getting comand ID from kestroke table
+    std::sort(keys.begin(), keys.end());
+    QString filter = QString("keystroke_id='%1' and event='%2' and panel='%3' and software_id='%4'")
+                         .arg(_keystrokeMap[keys]).arg(event).arg(panel).arg(_currentSoftware);
+    return getFirstRecordFrom("keystroke_commands", filter);
 }
 
 /*!
- * \brief Database::getKeyName
+ * \brief Database::getRepeatKeys
  * \param keyNumber
  * \param repeat
  * \param modifier
@@ -467,16 +680,13 @@ QString Database::getKeystrokeCommandID(QStringList keys, QString commandIDColum
  * Retrieves the name of the key based on its number.
  * Returns key properties such as whether it's a repeat key or a modifier.
  */
-QString Database::getKeyName(int keyNumber, bool *repeat, bool *modifier)
+QMap<int,bool> Database::getRepeatKeys()
 {
-    //Getting comand ID from kestrole table
-    QString tableName = "key_map";
-    QString filter = QString(_alternativeNumpad ? "keyNumAlternative='%1'" : "keyNum='%1'").arg(keyNumber);
-    auto record = getFirstRecordFrom(tableName, filter);
-
-    *repeat = record.value("repeat").toBool();
-    *modifier = record.value("modifier").toBool();
-    return record.value("keyName").toString();
+    QMap<int,bool> retVal;
+    QList<QSqlRecord> records = allTableRecords("key_code_odla");
+    for(QSqlRecord record : records)
+        retVal[record.value("keynum").toInt()] = record.value("repeat").toBool();
+    return retVal;
 }
 
 /*!
@@ -488,12 +698,12 @@ QString Database::getKeyName(int keyNumber, bool *repeat, bool *modifier)
 quint8 Database::getQwertyCode(QString readableKey)
 {
     //Getting comand ID from kestrole table
-    QString tableName = "qwerty_map";
-    QString filter = QString("keyName='%1'").arg(readableKey);
-    auto record = getFirstRecordFrom(tableName, filter);
+    QString tableName = "key_code_qwerty";
+    QString filter = QString("keyname='%1'").arg(readableKey);
+    QSqlRecord record = getFirstRecordFrom(tableName, filter);
 
-    if(record.value("keyNum").isValid())
-        return record.value("keyNum").toUInt();
+    if(record.value("keynum").isValid())
+        return record.value("keynum").toUInt();
     else
         return 0;
 }
@@ -504,18 +714,17 @@ quint8 Database::getQwertyCode(QString readableKey)
  *
  * Retrieves the command associated with the given command ID from the database.
  */
-QJsonObject Database::getCommand(QString commandID)
+QSqlRecord Database::getCommand(QString commandID)
 {
     //Getting method ID from command table
-    QString tableName = "command";
-    QString filter = QString("cmd_id='%1'").arg(commandID);
-    auto record = getFirstRecordFrom(tableName, filter);
-    if(record.isEmpty())
-        return QJsonObject();
-    QString commandRec = Metadata::resolveString(record.value(currentSoftware()).toString());
-    if(commandRec == "MS3")
-        commandRec = Metadata::resolveString(record.value("MUSESCORE3").toString());
-    QJsonDocument doc = QJsonDocument::fromJson(commandRec.toUtf8());
+    QString tableName = "software_command";
+    QString filter = QString("cmd_id='%1' and software_id='%2'").arg(commandID).arg(_currentSoftware);
+    return getFirstRecordFrom(tableName, filter);
+}
+
+QJsonObject Database::extractJson(QString string)
+{
+    QJsonDocument doc = QJsonDocument::fromJson(string.toUtf8());
     QJsonObject retVal = doc.object();
     return retVal;
 }
@@ -525,7 +734,7 @@ QJsonObject Database::getCommand(QString commandID)
  *  \param table
  *  \param filter
  *
- *  Get all records as QList of QSqlRecord given table and filter (@giorgio: to be continued.....)
+ *  Get all records as QList of QSqlRecord given table and filter
  */
 QList<QSqlRecord> Database::allTableRecords(QString table, QString filter)
 {
@@ -546,7 +755,7 @@ QList<QSqlRecord> Database::allTableRecords(QString table, QString filter)
 QSqlRecord Database::getFirstRecordFrom(QString tableName, QString filter)
 {
     QSqlRecord retVal;
-    auto table = _tableMap[tableName];
+    QSqlRelationalTableModel *table = _tableMap[tableName];
     if(table == nullptr)
         return retVal;
 
@@ -563,7 +772,7 @@ QSqlRecord Database::getFirstRecordFrom(QString tableName, QString filter)
 
 bool Database::insertToRecord(QString tableName, QString filter, QString fieldName, QVariant value, bool createIfNotExist)
 {
-    auto record = getFirstRecordFrom(tableName, filter);
+    QSqlRecord record = getFirstRecordFrom(tableName, filter);
 
     // If not exist record create new
     if(!record.value(fieldName).isValid() && createIfNotExist)
@@ -587,21 +796,32 @@ bool Database::insertToRecord(QString tableName, QString filter, QString fieldNa
     return false;
 }
 
+/*!
+ * \brief Database::loadKeyStrokes
+ *
+ */
 void Database::loadKeyStrokes()
 {
-    auto records = allTableRecords("keystroke");
-
-    for(auto &record : records)
+    QString query = QString("SELECT keystroke_id, GROUP_CONCAT(keyNum, '+') AS keys FROM keystroke_keys GROUP BY keystroke_id");
+    QSqlQuery q = safeQuery(query);
+    while (q.next())
     {
-        QStringList keystroke;
-        if(!record.value("key1").isNull())
-            keystroke.append(record.value("key1").toString());
-        if(!record.value("key2").isNull())
-            keystroke.append(record.value("key2").toString());
-        if(!record.value("key3").isNull())
-            keystroke.append(record.value("key3").toString());
-        keystroke.sort();
-        _keystrokeMap[keystroke] = record.value("keystroke_id").toInt();
+        QStringList keysString = q.value("keys").toString().split('+');
+        QList<int> keys;
+        foreach(QString key, keysString)
+            keys.append(key.toInt());
+        std::sort(keys.begin(), keys.end());
+        _keystrokeMap[keys] = q.value("keystroke_id").toInt();
     }
 }
 
+/*!
+ * \brief Database::getVersion
+ * \return
+ *
+ * Get the version of this application
+ */
+QString Database::getVersion()
+{
+    return QString(VERSION);
+}

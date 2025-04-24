@@ -1,9 +1,10 @@
 #include "appdorico.h"
+#include "metadata.h"
 
-AppDorico::AppDorico(QObject *parent) : App(parent, "DORICO")
+AppDorico::AppDorico(QObject *parent) : App(parent)
 {
-    qDebug() << "costruttore DORICO";
-    _appID = "DORICO";
+    qDebug() << "costruttore dorico";
+    _appID = "appdorico";
     _state = Disconnected;
     _inStepTimeInput = false;
     _hasScore = false;
@@ -11,7 +12,8 @@ AppDorico::AppDorico(QObject *parent) : App(parent, "DORICO")
     connect(&_checkStateTimer, &QTimer::timeout, this, &AppDorico::checkState);
     connect(&_webSocket, &QWebSocket::connected, this, &AppDorico::onSocketConnected);
     connect(&_webSocket, &QWebSocket::disconnected, this, &AppDorico::onClosed);
-    connect(&_webSocket, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error), this, &AppDorico::onError);
+    connect(&_webSocket, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::errorOccurred), this, &AppDorico::onError);
+    Metadata::addCallableInstance(this, false);
 }
 
 /*!
@@ -36,7 +38,7 @@ void AppDorico::send(QJsonObject command)
         if(!commandObj.value("inputmode").isUndefined())
             setNoteInputMode(commandObj.take("inputmode").toBool());
 
-        if(commandObj.take("ifHasSelection").toBool() && !_hasSelection)
+        if(commandObj.take("ifhasselection").toBool() && !_hasSelection)
             return;
 
         sendJsonObj(commandObj);
@@ -63,13 +65,6 @@ QString AppDorico::getSpeechData(QJsonObject cursorWrapper)
     return "";
 }
 
-App* AppDorico::instance(QObject *parent)
-{
-    if(!_instance)
-        return new AppDorico(parent);
-    return _instance;
-}
-
 void AppDorico::sendJsonObj(QJsonObject msg)
 {
     if(msg.isEmpty())
@@ -85,12 +80,12 @@ void AppDorico::onSocketConnected()
     connect(&_webSocket, &QWebSocket::textMessageReceived, this, &AppDorico::onTextMessageReceived);
     QJsonObject msg;
     msg["message"] = "connect";
-    msg["clientName"] = "ODLA Keyboard";
-    msg["handshakeVersion"] = "1.0";
-    _token = _db->getValue("DORICO_TOKEN", "STRING_VALUE").toString();
+    msg["clientname"] = "odla keyboard";
+    msg["handshakeversion"] = "1.0";
+    _token = _db->getSetting("dorico_token", "string_value").toString();
 
     if(!_token.isEmpty())
-        msg["sessionToken"] = _token;
+        msg["sessiontoken"] = _token;
     sendJsonObj(msg);
 }
 
@@ -104,14 +99,14 @@ void AppDorico::onTextMessageReceived(QString message)
     QJsonDocument doc = QJsonDocument::fromJson(message.toUtf8());
     QJsonObject inMsg = doc.object();
 
-    if(!inMsg.value("inStepTimeInput").isUndefined())
-        _inStepTimeInput = inMsg["inStepTimeInput"].toBool();
+    if(!inMsg.value("insteptimeinput").isUndefined())
+        _inStepTimeInput = inMsg["insteptimeinput"].toBool();
 
-    if(!inMsg.value("hasScore").isUndefined())
-        _hasScore = inMsg["hasScore"].toBool();
+    if(!inMsg.value("hasscore").isUndefined())
+        _hasScore = inMsg["hasscore"].toBool();
 
-    if(!inMsg.value("hasSelection").isUndefined())
-        _hasSelection = inMsg["hasSelection"].toBool();
+    if(!inMsg.value("hasselection").isUndefined())
+        _hasSelection = inMsg["hasselection"].toBool();
 
     //QTextStream(stdout) << doc.toJson(QJsonDocument::Indented) << "\n";
     //qDebug() << doc.toJson(QJsonDocument::Indented);
@@ -121,15 +116,15 @@ void AppDorico::onTextMessageReceived(QString message)
         {
             if(inMsg["message"].toString() == "sessiontoken")
             {
-                _token = inMsg["sessionToken"].toString();
-                _db->setValue("DORICO_TOKEN", "STRING_VALUE", _token);
+                _token = inMsg["sessiontoken"].toString();
+                _db->setSetting("dorico_token", "string_value", _token);
                 QJsonObject outMsg;
                 outMsg["message"] = "acceptsessiontoken";
-                outMsg["sessionToken"] = _token;
+                outMsg["sessiontoken"] = _token;
                 sendJsonObj(outMsg);
                 _state = WaitingResponse;
             }
-            else if(inMsg["code"] == "kConnected")
+            else if(inMsg["code"] == "kconnected")
             {
                 _state = Connected;
             }
@@ -140,9 +135,9 @@ void AppDorico::onTextMessageReceived(QString message)
 
         case WaitingResponse:
         {
-            if(inMsg["code"] == "kConnected")
+            if(inMsg["code"] == "kconnected")
             _state = Connected;
-            _vo->say(_db->speechText("ON_DORICO_CONNECTED"));
+            _vo->say(_db->speechText("on_dorico_connected"));
         }
         break;
 
@@ -154,7 +149,7 @@ void AppDorico::onTextMessageReceived(QString message)
 
         case Connected:
         {
-            //qDebug() << "Received data during connection";
+            //qDebug() << "received data during connection";
         }
         break;
     }
@@ -163,7 +158,7 @@ void AppDorico::onTextMessageReceived(QString message)
 void AppDorico::onError(QAbstractSocket::SocketError error)
 {
     Q_UNUSED(error);
-    _db->setValue("DORICO_TOKEN", "STRING_VALUE", "");
+    _db->setSetting("dorico_token", "string_value", "");
     _checkStateTimer.start(2000);
     _token = "";
 }
@@ -179,12 +174,11 @@ void AppDorico::checkState()
     {
         if(_state == Connected)
         {
-            _vo->say(_db->speechText("ON_DORICO_DISCONNECTED"));
+            _vo->say(_db->speechText("on_dorico_disconnected"));
             emit appConnected(false);
         }
         _state = Disconnected;
         _webSocket.abort();
-        qDebug() << "attempting to connect to Dorico...";
         _webSocket.open(QUrl(QStringLiteral("ws://127.0.0.1:4560")));
     }
     else
@@ -193,7 +187,7 @@ void AppDorico::checkState()
 
 void AppDorico::onAppConnectionError(QAbstractSocket::SocketError socketError)
 {
-
+    Q_UNUSED(socketError);
 }
 
 void AppDorico::setNoteInputMode(bool enabled)
@@ -203,21 +197,16 @@ void AppDorico::setNoteInputMode(bool enabled)
 
     if(!_inStepTimeInput && enabled)
     {
-        msg["command"] = "NoteInput.Enter?Set=true";
+        msg["command"] = "noteinput.enter?set=true";
         sendJsonObj(msg);
     }
     else if(_inStepTimeInput && !enabled)
     {
-        msg["command"] = "NoteInput.Enter?Set=false";
+        msg["command"] = "noteinput.enter?set=false";
         sendJsonObj(msg);
     }
 }
 
 
 
-void AppDorico::onIncomingData(const QString &speechMessage)
-{
-    QJsonObject jsonInput = QJsonDocument::fromJson(speechMessage.toUtf8()).object();
-    QString outMessage = VoiceOver::instance()->sort(jsonInput, _statusRequested);
-    VoiceOver::instance()->say(outMessage);
-}
+

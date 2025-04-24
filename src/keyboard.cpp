@@ -1,16 +1,16 @@
 #include "keyboard.h"
-#include "odlamanager.h"
 #include <cstring>
 #include <QTimer>
 #include <QSerialPortInfo>
 #include "metadata.h"
+#include "database.h"
 #define CONNECTCAST(OBJECT,TYPE,FUNC) static_cast<void(OBJECT::*)(TYPE)>(&OBJECT::FUNC)
 
 extern bool isDebug;
 Keyboard * Keyboard::_instance;
 const QList<QPair<int, int>> Keyboard::_vidPidToScan =  QList<QPair<int, int>>()
-    << QPair<int, int>(ODLA_USB_VID, ODLA_USB_PID)
-    << QPair<int, int>(LEONARDO_USB_VID, LEONARDO_USB_PID);
+                                                       << QPair<int, int>(ODLA_USB_VID, ODLA_USB_PID)
+                                                       << QPair<int, int>(LEONARDO_USB_VID, LEONARDO_USB_PID);
 
 Keyboard::Keyboard(QObject *parent) : QThread(parent)
 {
@@ -31,16 +31,25 @@ Keyboard::Keyboard(QObject *parent) : QThread(parent)
 
     _reSendTimer = new QTimer();
     _reSendTimer->setSingleShot(false);
-    connect(_reSendTimer, &QTimer::timeout, this, &Keyboard::reSendLastKey);
+    connect(_reSendTimer, &QTimer::timeout, this, &Keyboard::reSendLastKeystroke);
     connect(this, &Keyboard::repeatStart, _reSendTimer, QOverload<int>::of(&QTimer::start));
     connect(this, &Keyboard::repeatStop, _reSendTimer, &QTimer::stop);
+
+    _holdTimer = new QTimer();
+    _holdTimer->setSingleShot(true);
+    connect(_holdTimer, &QTimer::timeout, this, &Keyboard::onHoldTimerExpired);
 
     connect(&_odlaSerial, &QSerialPort::readyRead, this, &Keyboard::readCallback);
     connect(&_queueTimer, &QTimer::timeout, this, &Keyboard::ksSendTask);
     _queueTimer.setSingleShot(true);
 
+    connect(&serialQueueTimer, &QTimer::timeout, this, &Keyboard::processQueue);
+    serialQueueTimer.setSingleShot(false);
+
     _nextRepeatTime = FIRST_PRESS_TIME;
     _currentModifiers = 0;
+    _lastKeyCode = -1;
+    //_repeatMap = Database::instance()->getRepeatKeys(); // TODO: MOVE TO PANEL
 }
 
 /*!
@@ -80,8 +89,7 @@ void Keyboard::checkConnection()
     {   // ODLA works in serial Mode
         USBData_t outPkt;
         outPkt.header.command = WAKE_UP_COMMAND;
-        if (!serialWrite(outPkt))
-            emit keyboardConnectionChanged(false);
+        serialWrite(outPkt);
     }
 }
 
@@ -124,20 +132,16 @@ void Keyboard::readCallback()
     }
     else if(_odlaHID == NULL && _odlaSerial.isOpen())
     {
-        QByteArray buffer = _odlaSerial.readAll();
-        // parse data
-        if(buffer.size() > 0)
+        while (_odlaSerial.bytesAvailable() >= 2) // Leggiamo sempre due byte alla volta se disponibili
         {
+            QByteArray buffer = _odlaSerial.read(2); // Leggiamo due byte esatti
             hidReport = buffer[0];
             keyCode = buffer[1];
+
+            //qDebug() << (hidReport == ODLA_HID_PRESSED_REPORT ? "press" : "release") << keyCode;
+            hidReport == ODLA_HID_PRESSED_REPORT ? pressedKey(keyCode) : releasedKey(keyCode);
         }
     }
-
-    if(hidReport == ODLA_HID_PRESSED_REPORT)
-        pressedKey(keyCode);
-
-    else if(hidReport == ODLA_HID_RELEASED_REPORT)
-        releasedKey(keyCode);
 }
 
 /*!
@@ -165,26 +169,18 @@ void Keyboard::pressedKey(uint8_t keyCode)
     if(_lastPressTimer.restart() < DEBOUNCE_THRESHOLD && _lastKeyCode == keyCode)
         return;
 
-//    if(isDebug)
-//        qDebug() << "Pressed key:"  << keyCode;
+    _currentPressedKeys.append(keyCode);
 
-    bool repeat, modifier;
-    QString keyName = Database::instance()->getKeyName(keyCode, &repeat, &modifier);
-
-//    if(modifier)
-//        _currentPressedKeys.prepend(keyName);
-//    else
-        _currentPressedKeys.append(keyName);
-
-    // qDebug() << "keyPressed" << _currentPressedKeys;
-
-    if(repeat)
-        emit repeatStart(FIRST_PRESS_TIME);
-
-    emitKeyPress(true);
+    // TODO: Questa deve andare nel medoto dell'intero keystroke
+    // if(_repeatMap.value(keyCode))
+    //     emit repeatStart(FIRST_PRESS_TIME);
+    emit keyEvent(/*_currentPressedKeys*/ QList<int>() << keyCode, PRESS);
 
     _lastKeyCode = keyCode;
     _lastPressTimer.start();
+    _shortPress = true; // by default we should retain short press since timer slot edit this value
+    _holdTimer->start(HOLD_TIME);
+    _shortPress = true;
 }
 
 /*!
@@ -195,17 +191,29 @@ void Keyboard::pressedKey(uint8_t keyCode)
  */
 void Keyboard::releasedKey(uint8_t keyCode)
 {
-    bool repeat, modifier;
-    QString keyName = Database::instance()->getKeyName(keyCode, &repeat, &modifier);
+    if(_shortPress && _currentPressedKeys.size() > 0)
+        emit keyEvent(/*_currentPressedKeys*/ QList<int>() << keyCode, HOLD_SHORT);
+    emit keyEvent(/*_currentPressedKeys*/ QList<int>() << keyCode, RELEASE);
+    _currentPressedKeys.removeAll(keyCode);
+    qDebug() << _currentPressedKeys;
 
-    if(isDebug)
-        qDebug() << "Released key:"  << keyCode;
+    _holdTimer->stop();
+    // if(_repeatMap.value(keyCode))
+    //     emit repeatStop();
+}
 
-    emitKeyPress(false);
-    _currentPressedKeys.removeAll(keyName);
-
-    if(repeat)
-        emit repeatStop();
+/*!
+ * \brief Keyboard::onHoldTimerExpired
+ * \par keyCode
+ *
+ * Triggered when a key was pressed for a long time
+ */
+void Keyboard::onHoldTimerExpired()
+{
+    if(_currentPressedKeys.size() > 0)
+        emit keyEvent(_currentPressedKeys, HOLD_LONG);
+    _holdTimer->stop();
+    _shortPress = false;
 }
 
 /*!
@@ -213,15 +221,10 @@ void Keyboard::releasedKey(uint8_t keyCode)
  *
  * task for repetition key event
  */
-void Keyboard::reSendLastKey()
+void Keyboard::reSendLastKeystroke()
 {
-    emitKeyPress(true);
-    emit repeatStart(REPEAT_PRESS_TIME);
-}
-
-void Keyboard::emitKeyPress(bool press)
-{    
-    emit keyEvent(_currentPressedKeys, press);
+    // emit keyEvent(_currentPressedKeys, PRESS);
+    // emit repeatStart(REPEAT_PRESS_TIME);
 }
 
 /*!
@@ -344,8 +347,7 @@ void Keyboard::ksSendTask()
     for(int i = 0; i < ks.size(); i++)
         outPkt.quertyComm.qwertyEvent[ks.size() + i] = {ks.at(i), false};
 
-    if (!serialWrite(outPkt))
-        emit keyboardConnectionChanged(false);
+    serialWrite(outPkt);
 
     if(!_ksQueue.isEmpty())
         _queueTimer.start(50);
@@ -356,20 +358,59 @@ void Keyboard::ksSendTask()
  *
  * Send data to ODLA in serial Mode
  */
-bool Keyboard::serialWrite(USBData_t pkt)
+void Keyboard::serialWrite(USBData_t pkt)
 {
-    if(_odlaSerial.isOpen())
-        return _odlaSerial.write((char*)pkt.data, 64) != -1;
-    else
-        return false;
+    packetQueue.enqueue(pkt);
+    if (!serialQueueTimer.isActive())
+        serialQueueTimer.start(20);
 }
 
+/*
+ * \brief Keyboard::processQueue
+ *
+ * Send data to ODLA in serial Mode
+ */
+void Keyboard::processQueue()
+{
+    if (!_odlaSerial.isOpen() || packetQueue.isEmpty())
+    {
+        serialQueueTimer.stop(); // Se la porta è chiusa o la coda è vuota, ferma il timer
+        return;
+    }
+
+    USBData_t pkt = packetQueue.dequeue();
+    if(_odlaSerial.write((char*)pkt.data, 64) == -1)
+        emit keyboardConnectionChanged(false);
+
+    if (packetQueue.isEmpty())
+        serialQueueTimer.stop();
+}
 /*!
- * \brief Keyboard::sendQwerty
+ * \brief Keyboard::sendKeyboardEvent
+ *
+ *  Load QWERTY from DB and send just one key event
+ *  press or release
+ */
+void Keyboard::sendKeyboardEvent(QJsonObject command)
+{
+    auto key = command.value("key");
+    auto press = command.value("press");
+    ks_t keyStroke;
+    keyStroke.append(Database::instance()->getQwertyCode(key.toString()));
+    USBData_t outPkt;
+    outPkt.header.command = QWERTY_COMMAND;
+    outPkt.quertyComm.howMany = 1;
+    outPkt.quertyComm.qwertyEvent[0] = {keyStroke.at(0), press.toBool()};
+    serialWrite(outPkt);
+}
+
+
+/*!
+ * \brief Keyboard::sendKeystroke
  *
  *  Load QWERTY from DB and relative vocal guide message
  */
-void Keyboard::sendQwerty(QJsonObject command)
+void Keyboard::sendKeystroke(QJsonObject command)
 {
     auto key1 = command.value("key1");
     auto key2 = command.value("key2");
@@ -407,8 +448,5 @@ void Keyboard::sendMidi(QJsonObject command)
     outPkt.midiComm.midiEvent[0].press = press;
     outPkt.midiComm.midiEvent[0].channel = 1;
     outPkt.midiComm.midiEvent[0].velocity = 64;
-
-    qDebug() << "Sending midi pitch: " << pitch;
-    if (!serialWrite(outPkt))
-        emit keyboardConnectionChanged(false);
+    serialWrite(outPkt);
 }
